@@ -1,0 +1,17 @@
+{
+  "name": "log-analysis-workspace",
+  "private": true,
+  "workspaces": [
+    "nextjs"
+  ],
+  "scripts": {
+    "dev": "cd nextjs && bun dev",
+    "build": "cd nextjs && bun build",
+    "format": "bunx @biomejs/biome format --write .",
+    "lint": "bunx @biomejs/biome check .",
+    "lint:fix": "bunx @biomejs/biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4"
+  }
+}

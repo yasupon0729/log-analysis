@@ -1,0 +1,246 @@
+{
+  // デフォルトフォーマッターをBiomeに設定
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "quickfix.biome": "explicit",
+    "source.organizeImports.biome": "explicit"
+  },
+
+  // Biome設定
+  "biome.enabled": true,
+  "biome.configPath": "./biome.json",
+
+  // 言語別設定
+  "[javascript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[prisma]": {
+    "editor.defaultFormatter": "Prisma.prisma",
+    "editor.formatOnSave": true
+  },
+  // Tree 設定
+  "todo-tree.general.tagGroups": {
+    // バグ・不具合: コードの動作に問題がある箇所
+    "BUG": ["BUG"],
+    // タスク: 実装予定・未完了の作業
+    "TODO": ["TODO"],
+    // 一時的な回避策: 理想的でないが動作する暫定コード
+    "HACK": ["HACK"],
+    // 最適化: パフォーマンス改善が必要な箇所
+    "OPTIMIZE": ["OPTIMIZE"],
+    // 修正必須: 早急に修正が必要な問題箇所
+    "FIXME": ["FIXME"],
+    // メモ・備考: 重要な説明や注意事項
+    "NOTE": ["NOTE"],
+    // 警告: 注意が必要な危険な処理
+    "WARNING": ["WARNING"],
+    // 確認必要: 動作確認や仕様確認が必要
+    "CHECK": ["CHECK"],
+    // レビュー待ち: コードレビューが必要な箇所
+    "REVIEW": ["REVIEW"],
+    // 非推奨: 将来削除予定の古いコード
+    "DEPRECATED": ["DEPRECATED"],
+    // リファクタリング: コード整理・改善が必要
+    "REFACTOR": ["REFACTOR"],
+    // セキュリティ: 脆弱性の可能性がある箇所
+    "SECURITY": ["SECURITY"],
+    // パフォーマンス: 処理速度の改善が必要
+    "PERFORMANCE": ["PERFORMANCE"],
+    // テスト: テストコードの追加が必要
+    "TEST": ["TEST"],
+    // ドキュメント: 説明・文書の追加が必要
+    "DOCUMENT": ["DOCUMENT"],
+    // 質問: 不明点・確認したい事項
+    "QUESTION": ["QUESTION"],
+    // アイデア: 将来的な改善案・新機能の提案
+    "IDEA": ["IDEA"],
+    // 一時的: 後で削除予定の暫定コード
+    "TEMP": ["TEMP"]
+  },
+  "todo-tree.general.tags": [
+    "BUG",
+    "TODO",
+    "HACK",
+    "OPTIMIZE",
+    "FIXME",
+    "NOTE",
+    "WARNING",
+    "CHECK",
+    "REVIEW",
+    "DEPRECATED",
+    "REFACTOR",
+    "SECURITY",
+    "PERFORMANCE",
+    "TEST",
+    "DOCUMENT",
+    "QUESTION",
+    "IDEA",
+    "TEMP"
+  ],
+  "todo-tree.highlights.defaultHighlight": {
+    "type": "text-and-comment",
+    "gutterIcon": true,
+    "iconColour": "#2C7CFF",
+    "icon": "checklist",
+    "fontWeight": "bold",
+    "opacity": 0.5,
+    "hideFromActivityBar": true,
+    "background": "#ffffff",
+    "foreground": "#000000",
+    "borderRadius": "0.45"
+  },
+  "todo-tree.highlights.customHighlight": {
+    // 修正必須: 紫色、ビーカーアイコン
+    "FIXME": {
+      "gutterIcon": true,
+      "icon": "beaker",
+      "opacity": 0,
+      "background": "#c9e71b",
+      "foreground": "#b33bd1",
+      "iconColour": "#c915f7"
+    },
+    // メモ・備考: 緑色、ペイントブラシアイコン
+    "NOTE": {
+      "foreground": "#18aa18",
+      "gutterIcon": true,
+      "opacity": 0.1,
+      "icon": "paintbrush",
+      "iconColour": "#18aa18"
+    },
+    // タスク: 水色、チェックアイコン
+    "TODO": {
+      "foreground": "#2facbd",
+      "opacity": 0,
+      "gutterIcon": true,
+      "icon": "check-circle-fill",
+      "iconColour": "#00e1ff"
+    },
+    // 警告: 赤色、アラートアイコン
+    "WARNING": {
+      "gutterIcon": true,
+      "opacity": 0.9,
+      "icon": "alert-fill",
+      "rulerColour": "#faaaaa",
+      "iconColour": "#ff0000",
+      "foreground": "#ff000096"
+    },
+    // 確認必要: オレンジ色、人物アイコン
+    "CHECK": {
+      "foreground": "#f07401",
+      "gutterIcon": true,
+      "icon": "person-fill",
+      "opacity": 0.9,
+      "iconColour": "#f07401"
+    },
+    // バグ・不具合: 黄色、×アイコン
+    "BUG": {
+      "foreground": "#d3da00",
+      "gutterIcon": true,
+      "icon": "x-circle-fill",
+      "iconColour": "#d3da00"
+    },
+    // レビュー待ち: 紫色、目アイコン
+    "REVIEW": {
+      "foreground": "#9c00ff",
+      "gutterIcon": true,
+      "icon": "eye-fill",
+      "opacity": 0.7,
+      "iconColour": "#9c00ff"
+    },
+    // 非推奨: グレー、ゴミ箱、取り消し線
+    "DEPRECATED": {
+      "foreground": "#808080",
+      "gutterIcon": true,
+      "icon": "trash",
+      "opacity": 0.5,
+      "iconColour": "#808080",
+      "fontStyle": "strikethrough"
+    },
+    // リファクタリング: 赤色、ツールアイコン
+    "REFACTOR": {
+      "foreground": "#ff6b6b",
+      "gutterIcon": true,
+      "icon": "tools",
+      "opacity": 0.6,
+      "iconColour": "#ff6b6b"
+    },
+    // セキュリティ: 赤色＋赤背景、シールドアイコン
+    "SECURITY": {
+      "foreground": "#ff0000",
+      "background": "#ffcccc",
+      "gutterIcon": true,
+      "icon": "shield-fill-x",
+      "opacity": 0.9,
+      "iconColour": "#ff0000",
+      "fontWeight": "bold"
+    },
+    // パフォーマンス: オレンジ色、ストップウォッチアイコン
+    "PERFORMANCE": {
+      "foreground": "#ff8800",
+      "gutterIcon": true,
+      "icon": "stopwatch-fill",
+      "opacity": 0.7,
+      "iconColour": "#ff8800"
+    },
+    // テスト: 青緑色、再生アイコン
+    "TEST": {
+      "foreground": "#4ecdc4",
+      "gutterIcon": true,
+      "icon": "play-circle-fill",
+      "opacity": 0.6,
+      "iconColour": "#4ecdc4"
+    },
+    // ドキュメント: 青色、ファイルアイコン
+    "DOCUMENT": {
+      "foreground": "#556b8d",
+      "gutterIcon": true,
+      "icon": "file-text",
+      "opacity": 0.5,
+      "iconColour": "#556b8d"
+    },
+    // 質問: マゼンタ色、？アイコン
+    "QUESTION": {
+      "foreground": "#cc00cc",
+      "gutterIcon": true,
+      "icon": "question-circle-fill",
+      "opacity": 0.7,
+      "iconColour": "#cc00cc"
+    },
+    // アイデア: 黄色、電球アイコン
+    "IDEA": {
+      "foreground": "#ffd93d",
+      "gutterIcon": true,
+      "icon": "lightbulb-fill",
+      "opacity": 0.6,
+      "iconColour": "#ffd93d"
+    },
+    // 一時的: グレー、時計、イタリック体
+    "TEMP": {
+      "foreground": "#999999",
+      "gutterIcon": true,
+      "icon": "clock-fill",
+      "opacity": 0.4,
+      "iconColour": "#999999",
+      "fontStyle": "italic"
+    }
+  }
+}
