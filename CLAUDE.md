@@ -4,6 +4,9 @@
 S3から直接ログを取得して解析するダッシュボードアプリケーション。
 ダークテーマ・青基調のUIで、リアルタイムログ解析機能を提供。
 
+# mcpのcodex、serenaを優先的に使用して検証しなさい。
+# 修正・作成したファイルに関しては、実行後、必ずerrorがないことを確認しなさい。
+
 ## 🏗️ 現在の構成
 
 ### 技術スタック
@@ -77,13 +80,20 @@ S3から直接ログを取得して解析するダッシュボードアプリケ
 
 ### 開発サーバー起動
 ```bash
-cd /home/yasunari/KNiT/log-analysis
+cd /home/yasunari/KNiT/log-analysis/nextjs
 bun dev
 ```
 
 ### ビルド
 ```bash
-bun run build
+cd /home/yasunari/KNiT/log-analysis/nextjs
+bun run build --turbopack
+```
+
+### 本番環境起動
+```bash
+cd /home/yasunari/KNiT/log-analysis/nextjs
+bun run start
 ```
 
 ### コード品質
@@ -150,6 +160,11 @@ bun run lint:fix
 - VSCodeでF5キー → "Full Stack: Server + Client"選択
 - サーバーサイド・クライアントサイド同時デバッグ可能
 
+### ログファイル
+- **開発環境**: `nextjs/logs/server/app-dev.log`
+- **本番環境**: `nextjs/logs/server/app-prod.log`
+- **クライアントログ**: APIエンドポイント経由でサーバーログに記録
+
 ### パフォーマンス考慮
 - Panda CSSのZero-runtime特性を活用
 - 不要なre-renderを避ける
@@ -159,6 +174,7 @@ bun run lint:fix
 - [要件まとめ](.README.md/01_要件まとめ.md)
 - [環境構築まとめ](.README.md/02_環境構築まとめ.md)
 - [CSSの導入](.README.md/03_CSSの導入.md)
+- [Loggerの実装](.README.md/04_loggerの実装.md)
 
 # 完了要件
 - 修正・追加したファイルにエラーがないこと。

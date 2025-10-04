@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "kill": "lsof -t -i:3000 | xargs kill -9 2>/dev/null || echo 'No process found on port 3000'",
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
@@ -10,14 +11,19 @@
     "format": "biome format --write"
   },
   "dependencies": {
+    "next": "15.5.4",
+    "pino": "^10.0.0",
+    "pino-pretty": "^13.1.1",
+    "pino-roll": "^3.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.4"
+    "thread-stream": "^3.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.5",
     "@pandacss/dev": "^1.4.1",
     "@types/node": "^20",
+    "@types/pino": "^7.0.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "typescript": "^5"

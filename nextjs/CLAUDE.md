@@ -1,5 +1,9 @@
 # Log Analysis Dashboard - Current Configuration
 
+# mcpのcodex、serenaを優先的に使用して検証しなさい。
+# 修正・作成したファイルに関しては、実行後、必ずerrorがないことを確認しなさい。
+# cssは必ず、レシピとして別ファイル定義してください。(オーバライドのみ許可)
+
 ## Project Overview
 Next.js-based log analysis dashboard with S3 integration capabilities, built with modern React patterns and zero-runtime CSS.
 
