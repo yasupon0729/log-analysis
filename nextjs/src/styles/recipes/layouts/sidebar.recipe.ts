@@ -156,3 +156,102 @@ export const sidebarToggleRecipe = cva({
     },
   },
 });
+
+// Header内のロゴコンテナ
+export const sidebarLogoContainerRecipe = cva({
+  base: {
+    display: "flex",
+    alignItems: "center",
+    gap: 3,
+  },
+});
+
+// ロゴアイコン
+export const sidebarLogoIconRecipe = cva({
+  base: {
+    fontSize: "2xl",
+    color: "primary.400",
+  },
+});
+
+// ロゴテキスト（基本スタイル）
+export const sidebarLogoTextRecipe = cva({
+  base: {
+    fontSize: "lg",
+    fontWeight: "bold",
+    color: "text.primary",
+  },
+});
+
+// Footer全体
+export const sidebarFooterRecipe = cva({
+  base: {
+    borderTop: "thin",
+    borderColor: "dark.border",
+    p: 4,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+});
+
+// ユーザーアバター
+export const sidebarUserAvatarRecipe = cva({
+  base: {
+    width: "32px",
+    height: "32px",
+    borderRadius: "full",
+    bg: "tertiary.600",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "white",
+    fontSize: "sm",
+    fontWeight: "bold",
+  },
+});
+
+// ユーザー情報コンテナ
+export const sidebarUserInfoRecipe = cva({
+  base: {
+    flex: 1,
+  },
+});
+
+// ユーザー名
+export const sidebarUserNameRecipe = cva({
+  base: {
+    fontSize: "sm",
+    color: "text.primary",
+    fontWeight: "medium",
+  },
+});
+
+// ユーザー役割
+export const sidebarUserRoleRecipe = cva({
+  base: {
+    fontSize: "xs",
+    color: "text.tertiary",
+  },
+});
+
+// トグルボタン内のアイコン
+export const sidebarToggleIconRecipe = cva({
+  base: {
+    transition: "transform 0.2s ease-in-out",
+  },
+  variants: {
+    expanded: {
+      true: {
+        transform: "rotate(180deg)",
+      },
+      false: {
+        transform: "rotate(0deg)",
+      },
+    },
+  },
+  defaultVariants: {
+    expanded: false,
+  },
+});

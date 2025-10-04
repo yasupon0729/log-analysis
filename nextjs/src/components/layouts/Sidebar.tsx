@@ -1,15 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { css } from "@/styled-system/css";
 import {
+  sidebarFooterRecipe,
   sidebarHeaderRecipe,
   sidebarIconRecipe,
   sidebarLabelRecipe,
+  sidebarLogoContainerRecipe,
+  sidebarLogoIconRecipe,
+  sidebarLogoTextRecipe,
   sidebarNavItemRecipe,
   sidebarNavRecipe,
   sidebarRecipe,
+  sidebarToggleIconRecipe,
   sidebarToggleRecipe,
+  sidebarUserAvatarRecipe,
+  sidebarUserInfoRecipe,
+  sidebarUserNameRecipe,
+  sidebarUserRoleRecipe,
 } from "@/styles/recipes/layouts/sidebar.recipe";
 
 interface NavItem {
@@ -35,28 +43,11 @@ export function Sidebar() {
     <aside className={sidebarRecipe({ expanded })}>
       {/* Header */}
       <div className={sidebarHeaderRecipe()}>
-        <div
-          className={css({
-            display: "flex",
-            alignItems: "center",
-            gap: 3,
-          })}
-        >
-          <span
-            className={css({
-              fontSize: "2xl",
-              color: "primary.400",
-            })}
-          >
-            🚀
-          </span>
+        <div className={sidebarLogoContainerRecipe()}>
+          <span className={sidebarLogoIconRecipe()}>🚀</span>
           {expanded && (
             <span
-              className={css({
-                fontSize: "lg",
-                fontWeight: "bold",
-                color: "text.primary",
-              })}
+              className={sidebarLogoTextRecipe()}
               style={{
                 background: "linear-gradient(135deg, #47a3f3 0%, #34d399 100%)",
                 WebkitBackgroundClip: "text",
@@ -91,52 +82,12 @@ export function Sidebar() {
       </nav>
 
       {/* Footer - User Info */}
-      <div
-        className={css({
-          borderTop: "thin",
-          borderColor: "dark.border",
-          p: 4,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 3,
-        })}
-      >
-        <div
-          className={css({
-            width: "32px",
-            height: "32px",
-            borderRadius: "full",
-            bg: "tertiary.600",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "white",
-            fontSize: "sm",
-            fontWeight: "bold",
-          })}
-        >
-          U
-        </div>
+      <div className={sidebarFooterRecipe()}>
+        <div className={sidebarUserAvatarRecipe()}>U</div>
         {expanded && (
-          <div className={css({ flex: 1 })}>
-            <div
-              className={css({
-                fontSize: "sm",
-                color: "text.primary",
-                fontWeight: "medium",
-              })}
-            >
-              User
-            </div>
-            <div
-              className={css({
-                fontSize: "xs",
-                color: "text.tertiary",
-              })}
-            >
-              Admin
-            </div>
+          <div className={sidebarUserInfoRecipe()}>
+            <div className={sidebarUserNameRecipe()}>User</div>
+            <div className={sidebarUserRoleRecipe()}>Admin</div>
           </div>
         )}
       </div>
@@ -148,14 +99,7 @@ export function Sidebar() {
         onClick={() => setExpanded(!expanded)}
         aria-label="Toggle sidebar"
       >
-        <span
-          className={css({
-            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease-in-out",
-          })}
-        >
-          ▶
-        </span>
+        <span className={sidebarToggleIconRecipe({ expanded })}>▶</span>
       </button>
     </aside>
   );
