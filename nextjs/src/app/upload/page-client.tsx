@@ -4,7 +4,23 @@ import type { ChangeEvent, DragEvent } from "react";
 import { useCallback, useRef, useState } from "react";
 
 import { logger } from "@/lib/logger/client";
-import { css } from "@/styled-system/css";
+import {
+  uploadDescriptionCodeRecipe,
+  uploadDescriptionRecipe,
+  uploadDropZoneRecipe,
+  uploadDropZoneSubtitleRecipe,
+  uploadDropZoneTitleRecipe,
+  uploadErrorAlertRecipe,
+  uploadHiddenInputRecipe,
+  uploadIntroSectionRecipe,
+  uploadLogViewerRecipe,
+  uploadPageContainerRecipe,
+  uploadResultHeaderRecipe,
+  uploadResultMetadataGridRecipe,
+  uploadResultSectionRecipe,
+  uploadResultTitleRecipe,
+  uploadTitleRecipe,
+} from "@/styles/recipes/components/upload-log-client.recipe";
 
 interface DecodeSuccess {
   ok: true;
@@ -177,50 +193,12 @@ export default function UploadLogClient() {
   }, []);
 
   return (
-    <div
-      className={css({
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        padding: 8,
-        minHeight: "100%",
-      })}
-    >
-      <section
-        className={css({
-          display: "flex",
-          flexDirection: "column",
-          gap: 4,
-        })}
-      >
-        <h1
-          className={css({
-            fontSize: "2xl",
-            fontWeight: "bold",
-          })}
-        >
-          暗号化ログのアップロード検証
-        </h1>
-        <p
-          className={css({
-            color: "text.secondary",
-            fontSize: "md",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 1,
-          })}
-        >
+    <div className={uploadPageContainerRecipe()}>
+      <section className={uploadIntroSectionRecipe()}>
+        <h1 className={uploadTitleRecipe()}>暗号化ログのアップロード検証</h1>
+        <p className={uploadDescriptionRecipe()}>
           <span>S3から取得した</span>
-          <code
-            className={css({
-              backgroundColor: "neutral.900",
-              borderRadius: "sm",
-              paddingInline: 1,
-              fontSize: "sm",
-            })}
-          >
-            .log.gz.enc
-          </code>
+          <code className={uploadDescriptionCodeRecipe()}>.log.gz.enc</code>
           <span>
             ファイルをドラッグ＆ドロップするか、ファイル選択から読み込むと復号して内容を表示します。
           </span>
@@ -234,99 +212,37 @@ export default function UploadLogClient() {
         onDragLeave={onDragLeave}
         onDragOver={onDragOver}
         onDrop={onDrop}
-        className={css({
-          border: "dashed",
-          borderRadius: "xl",
-          padding: 8,
-          textAlign: "center",
-          cursor: "pointer",
-          transition: "all 0.2s",
-          borderColor: isDragging ? "primary.400" : "border.default",
-          backgroundColor: isDragging ? "dark.surface" : "transparent",
-          opacity: isLoading ? 0.7 : 1,
+        className={uploadDropZoneRecipe({
+          dragging: isDragging,
+          loading: isLoading,
         })}
       >
         <input
           ref={fileInputRef}
           type="file"
           accept=".enc,.gz,.log"
-          className={css({ display: "none" })}
+          className={uploadHiddenInputRecipe()}
           onChange={onInputChange}
         />
-        <p
-          className={css({
-            fontSize: "lg",
-            fontWeight: "semibold",
-            mb: 2,
-          })}
-        >
+        <p className={uploadDropZoneTitleRecipe()}>
           {isLoading ? "復号処理中..." : "ここにファイルをドロップ"}
         </p>
-        <p
-          className={css({
-            color: "text.secondary",
-            fontSize: "sm",
-          })}
-        >
+        <p className={uploadDropZoneSubtitleRecipe()}>
           クリックでファイル選択もできます
         </p>
       </button>
 
       {errorMessage ? (
-        <div
-          className={css({
-            borderRadius: "md",
-            border: "thin",
-            borderColor: "error.500",
-            backgroundColor: "rgba(220, 38, 38, 0.1)",
-            color: "error.100",
-            padding: 4,
-          })}
-        >
+        <div className={uploadErrorAlertRecipe()}>
           <strong>エラー:</strong> {errorMessage}
         </div>
       ) : null}
 
       {result ? (
-        <section
-          className={css({
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            border: "thin",
-            borderColor: "border.default",
-            borderRadius: "lg",
-            padding: 6,
-            backgroundColor: "dark.surface",
-          })}
-        >
-          <header
-            className={css({
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            })}
-          >
-            <h2
-              className={css({
-                fontSize: "xl",
-                fontWeight: "semibold",
-              })}
-            >
-              {result.filename}
-            </h2>
-            <div
-              className={css({
-                display: "grid",
-                gridTemplateColumns: {
-                  base: "repeat(1, minmax(0, 1fr))",
-                  md: "repeat(2, minmax(0, 1fr))",
-                },
-                gap: 2,
-                color: "text.secondary",
-                fontSize: "sm",
-              })}
-            >
+        <section className={uploadResultSectionRecipe()}>
+          <header className={uploadResultHeaderRecipe()}>
+            <h2 className={uploadResultTitleRecipe()}>{result.filename}</h2>
+            <div className={uploadResultMetadataGridRecipe()}>
               <span>暗号化サイズ: {formatBytes(result.encryptedSize)}</span>
               <span>復号後サイズ: {formatBytes(result.decryptedSize)}</span>
               <span>ログサイズ: {formatBytes(result.logSize)}</span>
@@ -336,21 +252,7 @@ export default function UploadLogClient() {
             </div>
           </header>
 
-          <pre
-            className={css({
-              maxHeight: "70vh",
-              overflow: "auto",
-              padding: 4,
-              borderRadius: "md",
-              backgroundColor: "neutral.900",
-              color: "neutral.100",
-              fontSize: "sm",
-              whiteSpace: "pre-wrap",
-              textAlign: "left",
-            })}
-          >
-            {result.logText}
-          </pre>
+          <pre className={uploadLogViewerRecipe()}>{result.logText}</pre>
         </section>
       ) : null}
     </div>
