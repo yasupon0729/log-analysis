@@ -2,6 +2,8 @@
 
 import {
   type ColumnFiltersState,
+  type ColumnSizingInfoState,
+  type ColumnSizingState,
   type FilterFn,
   getCoreRowModel,
   getFilteredRowModel,
@@ -151,6 +153,16 @@ export default function TanstackTable<T>({
   });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [columnSizingInfo, setColumnSizingInfo] =
+    useState<ColumnSizingInfoState>({
+      startOffset: null,
+      startSize: null,
+      deltaOffset: 0,
+      deltaPercentage: 0,
+      columnSizingStart: [],
+      isResizingColumn: false,
+    });
 
   const table = useReactTable({
     data,
@@ -162,11 +174,20 @@ export default function TanstackTable<T>({
       pagination,
       rowSelection,
       columnVisibility,
+      columnSizing,
+      columnSizingInfo,
     },
     enableRowSelection,
     enableHiding: true,
+    columnResizeMode: "onChange",
     filterFns: {
       dateRange: dateRangeFilter,
+    },
+    defaultColumn: {
+      minSize: 80,
+      maxSize: 800,
+      size: 200,
+      enableResizing: true,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -174,6 +195,8 @@ export default function TanstackTable<T>({
     onPaginationChange: setPagination,
     onRowSelectionChange: enableRowSelection ? setRowSelection : undefined,
     onColumnVisibilityChange: setColumnVisibility,
+    onColumnSizingChange: setColumnSizing,
+    onColumnSizingInfoChange: setColumnSizingInfo,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -263,7 +286,13 @@ export default function TanstackTable<T>({
       ) : (
         <>
           <div className={dataTableWrapperRecipe()}>
-            <table className={dataTableRecipe()}>
+            <table
+              className={dataTableRecipe()}
+              style={{
+                width: `${table.getTotalSize()}px`,
+                minWidth: "100%",
+              }}
+            >
               <TanstackTableHeader table={table} />
               <TanstackTableBody table={table} />
             </table>

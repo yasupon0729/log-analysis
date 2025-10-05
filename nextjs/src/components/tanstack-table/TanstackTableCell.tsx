@@ -14,9 +14,16 @@ export default function TanstackTableCell<T>({
   const meta = cell.column.columnDef.meta as CustomColumnMeta | undefined;
   const cellType = meta?.cellType ?? "text";
   const editable = meta?.editable ?? false;
+  const width = cell.column.getSize();
 
   return (
-    <td className={dataTableCellRecipe({ cellType, editable })}>
+    <td
+      className={dataTableCellRecipe({ cellType, editable })}
+      style={{
+        width: `${width}px`,
+        minWidth: `${cell.column.columnDef.minSize ?? 40}px`,
+      }}
+    >
       {flexRender(cell.column.columnDef.cell, cell.getContext())}
     </td>
   );

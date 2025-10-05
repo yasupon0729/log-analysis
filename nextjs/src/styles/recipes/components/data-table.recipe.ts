@@ -269,6 +269,32 @@ export const dataTableSortIconRecipe = cva({
   },
 });
 
+export const dataTableColumnResizerRecipe = cva({
+  base: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: "6px",
+    height: "100%",
+    cursor: "col-resize",
+    backgroundColor: "transparent",
+    transition: "background-color 0.2s",
+    padding: 0,
+    border: "none",
+    appearance: "none",
+    _hover: {
+      backgroundColor: "primary.500",
+    },
+  },
+  variants: {
+    active: {
+      true: {
+        backgroundColor: "primary.500",
+      },
+    },
+  },
+});
+
 export const dataTableEmptyStateRecipe = cva({
   base: {
     paddingY: 12,

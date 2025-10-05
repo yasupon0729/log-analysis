@@ -3,6 +3,7 @@ import type { KeyboardEvent } from "react";
 
 import { css } from "@/styled-system/css";
 import {
+  dataTableColumnResizerRecipe,
   dataTableFilterCellRecipe,
   dataTableFilterRowRecipe,
   dataTableHeaderCellRecipe,
@@ -51,6 +52,40 @@ export default function TanstackTableHeader<T>({
               }
             };
 
+            const width = header.getSize();
+            const minWidth = header.column.columnDef.minSize ?? 40;
+            const maxWidth = header.column.columnDef.maxSize;
+
+            const handleResizeKeyDown = (
+              event: KeyboardEvent<HTMLButtonElement>,
+            ) => {
+              if (!header.column.getCanResize()) {
+                return;
+              }
+
+              const currentSize = header.getSize();
+              const clampSize = (size: number) =>
+                typeof maxWidth === "number"
+                  ? Math.min(Math.max(size, minWidth), maxWidth)
+                  : Math.max(size, minWidth);
+
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                const nextSize = clampSize(currentSize - 10);
+                table.setColumnSizing((prev) => ({
+                  ...prev,
+                  [header.column.id]: nextSize,
+                }));
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                const nextSize = clampSize(currentSize + 10);
+                table.setColumnSizing((prev) => ({
+                  ...prev,
+                  [header.column.id]: nextSize,
+                }));
+              }
+            };
+
             return (
               <th
                 key={header.id}
@@ -69,6 +104,12 @@ export default function TanstackTableHeader<T>({
                       ? "descending"
                       : "none"
                 }
+                style={{
+                  width: `${width}px`,
+                  minWidth: `${minWidth}px`,
+                  maxWidth:
+                    typeof maxWidth === "number" ? `${maxWidth}px` : undefined,
+                }}
               >
                 <div className={headerContentClass}>
                   {header.isPlaceholder
@@ -92,6 +133,28 @@ export default function TanstackTableHeader<T>({
                     </span>
                   ) : null}
                 </div>
+                {header.column.getCanResize() ? (
+                  <button
+                    className={dataTableColumnResizerRecipe({
+                      active: header.column.getIsResizing(),
+                    })}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      header.getResizeHandler()(event);
+                    }}
+                    onMouseDown={(event) => {
+                      event.stopPropagation();
+                      header.getResizeHandler()(event);
+                    }}
+                    onTouchStart={(event) => {
+                      event.stopPropagation();
+                      header.getResizeHandler()(event);
+                    }}
+                    onKeyDown={handleResizeKeyDown}
+                    type="button"
+                    aria-label="列幅を調整"
+                  />
+                ) : null}
               </th>
             );
           })}
@@ -103,6 +166,7 @@ export default function TanstackTableHeader<T>({
           <th
             key={`${header.id}-filter`}
             className={dataTableFilterCellRecipe()}
+            style={{ width: `${header.getSize()}px` }}
           >
             {header.column.getCanFilter() ? (
               <ColumnFilter column={header.column} />
