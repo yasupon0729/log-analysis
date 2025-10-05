@@ -1,9 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { logger } from "@/lib/logger/client";
 import { css } from "@/styled-system/css";
 import { gradientTextProps } from "@/styles/utils/gradient-text";
-import { useEffect } from "react";
 
 export default function HomeClient() {
   useEffect(() => {

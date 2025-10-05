@@ -4,10 +4,7 @@
 
 import type { Logger } from "pino";
 
-export interface LogMetadata {
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  [key: string]: any;
-}
+export type LogMetadata = Record<string, unknown>;
 
 export class LoggerWrapper {
   private logger: Logger;

@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { logger } from "@/lib/logger/server";
 import { type NextRequest, NextResponse } from "next/server";
 import pino from "pino";
+import { logger } from "@/lib/logger/server";
 
 // クライアントログ用の専用 logger インスタンス（シングルトン）
 const isDevelopment = process.env.NODE_ENV === "development";
@@ -35,10 +35,8 @@ interface ClientLog {
     label: string;
     value: number;
   };
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  messages?: any[];
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  bindings?: Record<string, any>[];
+  messages?: unknown[];
+  bindings?: Array<Record<string, unknown>>;
   ts?: number;
   timestamp: string;
   userAgent?: string;
@@ -68,12 +66,27 @@ export async function POST(req: NextRequest) {
 
       // レベルに応じて適切なメソッドを使用
       const level = log.level?.label?.toLowerCase() || "info";
-      const logMethod =
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        (clientFileLogger as any)[level] || clientFileLogger.info;
-
       // ファイルに出力（開発環境でも）
-      logMethod.bind(clientFileLogger)(enrichedLog);
+      switch (level) {
+        case "trace":
+          clientFileLogger.trace(enrichedLog);
+          break;
+        case "debug":
+          clientFileLogger.debug(enrichedLog);
+          break;
+        case "warn":
+          clientFileLogger.warn(enrichedLog);
+          break;
+        case "error":
+          clientFileLogger.error(enrichedLog);
+          break;
+        case "fatal":
+          clientFileLogger.fatal(enrichedLog);
+          break;
+        default:
+          clientFileLogger.info(enrichedLog);
+          break;
+      }
 
       // サーバーログにも記録（エラーの監視用）
       if (level === "error" || level === "fatal") {

@@ -55,7 +55,7 @@ const pinoLogger = isDevelopment
       }),
     );
 
-// ログレベルのエイリアス  
+// ログレベルのエイリアス
 export const serverLogger = pinoLogger;
 
 // ラッパーをインポート
