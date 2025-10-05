@@ -237,7 +237,7 @@ import { cookies } from 'next/headers';
 export class ServerApiClient extends ApiClient {
   constructor(baseURL?: string) {
     super(
-      baseURL || process.env.API_BASE_URL || 'http://localhost:3000/api',
+      baseURL || process.env.API_BASE_URL || 'http://localhost:3729/api',
       serverLogger
     );
   }

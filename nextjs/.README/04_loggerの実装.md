@@ -470,14 +470,14 @@ logs/
 // package.json
 {
   "scripts": {
-    "kill": "lsof -t -i:3000 | xargs kill -9 2>/dev/null || echo 'No process found on port 3000'"
+    "kill": "lsof -t -i:3729 | xargs kill -9 2>/dev/null || echo 'No process found on port 3729'"
   }
 }
 ```
 
 使用方法:
 ```bash
-bun run kill  # ポート3000のプロセスを終了
+bun run kill  # ポート3729のプロセスを終了
 ```
 
 #### 自動削除スクリプト
@@ -730,7 +730,7 @@ timestamp: () => `,"time":"${new Date().toLocaleString('ja-JP')}"`,
 4. **シンプルなAPI**: `logger.info(message, metadata?)` 形式
 5. **環境別最適化**: 開発環境と本番環境で異なる設定
 6. **バンドル問題の解決**: Next.js 15 対応の設定で fs エラーを回避
-7. **プロセス管理**: `bun run kill` でポート3000のプロセスを簡単に終了
+7. **プロセス管理**: `bun run kill` でポート3729のプロセスを簡単に終了
 
 ### 重要な設定
 
