@@ -3,6 +3,7 @@
 import type { ChangeEvent, DragEvent } from "react";
 import { useCallback, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/Button";
 import { logger } from "@/lib/logger/client";
 import {
   uploadDescriptionCodeRecipe,
@@ -205,7 +206,7 @@ export default function UploadLogClient() {
         </p>
       </section>
 
-      <button
+      <Button
         type="button"
         onClick={triggerFileDialog}
         onDragEnter={onDragEnter}
@@ -216,6 +217,7 @@ export default function UploadLogClient() {
           dragging: isDragging,
           loading: isLoading,
         })}
+        variant="unstyled"
       >
         <input
           ref={fileInputRef}
@@ -230,7 +232,7 @@ export default function UploadLogClient() {
         <p className={uploadDropZoneSubtitleRecipe()}>
           クリックでファイル選択もできます
         </p>
-      </button>
+      </Button>
 
       {errorMessage ? (
         <div className={uploadErrorAlertRecipe()}>

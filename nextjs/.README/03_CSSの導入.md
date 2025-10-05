@@ -174,7 +174,7 @@ spacing: {
 
 ### Phase 2: コンポーネント実装（MVP開発時）
 1. UIコンポーネントレシピ作成
-   - Button
+   - Button（実装済み: `src/components/ui/Button.tsx` / レシピ: `src/styles/recipes/components/button.recipe.ts`）
    - Table（TanStack Table連携）
    - FilterBar
    - DatePicker
@@ -188,6 +188,33 @@ spacing: {
 3. パフォーマンス計測
 
 ## 💻 実装例
+
+### Button コンポーネント
+`<Button>` を利用してアクションボタンを統一します。標準では `variant="solid"` が適用され、必要に応じて `variant="outline"` や `variant="unstyled"` などの指定が可能です。
+
+```tsx
+import { Button } from "@/components/ui/Button";
+import { css } from "@/styled-system/css";
+
+export function ExampleButtons() {
+  return (
+    <div className={css({ display: "flex", gap: 3 })}>
+      <Button>実行</Button>
+      <Button variant="outline">詳細を見る</Button>
+      <Button
+        variant="unstyled"
+        className={css({
+          color: "primary.300",
+          textDecoration: "underline",
+          _hover: { color: "primary.200" },
+        })}
+      >
+        カスタムスタイル
+      </Button>
+    </div>
+  );
+}
+```
 
 ### コンポーネントでの使用
 ```tsx

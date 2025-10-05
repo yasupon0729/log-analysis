@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+
+import { Button } from "@/components/ui/Button";
 import {
   sidebarFooterRecipe,
   sidebarHeaderRecipe,
@@ -64,20 +66,21 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className={sidebarNavRecipe()}>
         {navItems.map((item) => (
-          <button
+          <Button
             key={item.id}
             type="button"
             className={sidebarNavItemRecipe({
               active: activeItem === item.id,
               expanded,
             })}
+            variant="unstyled"
             onClick={() => setActiveItem(item.id)}
           >
             <span className={sidebarIconRecipe()}>{item.icon}</span>
             <span className={sidebarLabelRecipe({ expanded })}>
               {item.label}
             </span>
-          </button>
+          </Button>
         ))}
       </nav>
 
@@ -93,14 +96,15 @@ export function Sidebar() {
       </div>
 
       {/* Toggle Button */}
-      <button
+      <Button
         type="button"
         className={sidebarToggleRecipe()}
         onClick={() => setExpanded(!expanded)}
         aria-label="Toggle sidebar"
+        variant="unstyled"
       >
         <span className={sidebarToggleIconRecipe({ expanded })}>▶</span>
-      </button>
+      </Button>
     </aside>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { Button } from "@/components/ui/Button";
 import { logger } from "@/lib/logger/client";
 import { css } from "@/styled-system/css";
 import { gradientTextProps } from "@/styles/utils/gradient-text";
@@ -95,7 +96,7 @@ export default function HomeClient() {
         })}
       >
         {/* Primary Card */}
-        <button
+        <Button
           type="button"
           data-card-type="primary"
           className={css({
@@ -108,12 +109,17 @@ export default function HomeClient() {
             cursor: "pointer",
             width: "100%",
             textAlign: "left",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 3,
             _hover: {
               transform: "translateY(-2px)",
               borderColor: "primary.500",
               boxShadow: "0 4px 12px rgba(9, 103, 210, 0.2)",
             },
           })}
+          variant="unstyled"
           onClick={() => {
             logger.info("Primary card clicked", {
               event: "card_click",
@@ -124,7 +130,6 @@ export default function HomeClient() {
           <div
             className={css({
               fontSize: "2xl",
-              mb: 3,
             })}
           >
             🎨
@@ -134,7 +139,6 @@ export default function HomeClient() {
               fontSize: "xl",
               fontWeight: "semibold",
               color: "primary.400",
-              mb: 2,
             })}
           >
             プライマリカラー
@@ -148,10 +152,10 @@ export default function HomeClient() {
           >
             青系のメインカラーです。Panda CSSのトークンから色を適用しています。
           </p>
-        </button>
+        </Button>
 
         {/* Secondary Card */}
-        <button
+        <Button
           type="button"
           data-card-type="secondary"
           className={css({
@@ -164,12 +168,17 @@ export default function HomeClient() {
             cursor: "pointer",
             width: "100%",
             textAlign: "left",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 3,
             _hover: {
               transform: "translateY(-2px)",
               borderColor: "secondary.500",
               boxShadow: "0 4px 12px rgba(16, 185, 129, 0.2)",
             },
           })}
+          variant="unstyled"
           onClick={() => {
             logger.info("Secondary card clicked", {
               event: "card_click",
@@ -180,7 +189,6 @@ export default function HomeClient() {
           <div
             className={css({
               fontSize: "2xl",
-              mb: 3,
             })}
           >
             ✅
@@ -190,7 +198,6 @@ export default function HomeClient() {
               fontSize: "xl",
               fontWeight: "semibold",
               color: "secondary.400",
-              mb: 2,
             })}
           >
             セカンダリカラー
@@ -204,10 +211,10 @@ export default function HomeClient() {
           >
             緑系のセカンダリカラーです。成功状態やポジティブなアクションに使用します。
           </p>
-        </button>
+        </Button>
 
         {/* Tertiary Card */}
-        <button
+        <Button
           type="button"
           data-card-type="tertiary"
           className={css({
@@ -220,12 +227,17 @@ export default function HomeClient() {
             cursor: "pointer",
             width: "100%",
             textAlign: "left",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: 3,
             _hover: {
               transform: "translateY(-2px)",
               borderColor: "tertiary.500",
               boxShadow: "0 4px 12px rgba(236, 72, 153, 0.2)",
             },
           })}
+          variant="unstyled"
           onClick={() => {
             logger.info("Tertiary card clicked", {
               event: "card_click",
@@ -236,7 +248,6 @@ export default function HomeClient() {
           <div
             className={css({
               fontSize: "2xl",
-              mb: 3,
             })}
           >
             💖
@@ -246,7 +257,6 @@ export default function HomeClient() {
               fontSize: "xl",
               fontWeight: "semibold",
               color: "tertiary.400",
-              mb: 2,
             })}
           >
             ターシャリカラー
@@ -260,7 +270,7 @@ export default function HomeClient() {
           >
             ピンク系の第3のカラーです。アクセントや特別な要素の強調に使用します。
           </p>
-        </button>
+        </Button>
       </div>
 
       {/* Status Examples */}
@@ -272,7 +282,7 @@ export default function HomeClient() {
           flexWrap: "wrap",
         })}
       >
-        <button
+        <Button
           type="button"
           className={css({
             px: 4,
@@ -282,14 +292,14 @@ export default function HomeClient() {
             color: "status.error",
             fontSize: "sm",
             fontWeight: "medium",
-            cursor: "pointer",
             border: "none",
           })}
+          variant="unstyled"
           onClick={() => logger.error("Test error log from button click")}
         >
           エラー（クリックでエラーログ）
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className={css({
             px: 4,
@@ -299,14 +309,14 @@ export default function HomeClient() {
             color: "status.warning",
             fontSize: "sm",
             fontWeight: "medium",
-            cursor: "pointer",
             border: "none",
           })}
+          variant="unstyled"
           onClick={() => logger.warn("Test warning log from button click")}
         >
           警告（クリックで警告ログ）
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className={css({
             px: 4,
@@ -316,14 +326,14 @@ export default function HomeClient() {
             color: "status.success",
             fontSize: "sm",
             fontWeight: "medium",
-            cursor: "pointer",
             border: "none",
           })}
+          variant="unstyled"
           onClick={() => logger.info("Test success log from button click")}
         >
           成功（クリックで成功ログ）
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           className={css({
             px: 4,
@@ -333,13 +343,13 @@ export default function HomeClient() {
             color: "status.info",
             fontSize: "sm",
             fontWeight: "medium",
-            cursor: "pointer",
             border: "none",
           })}
+          variant="unstyled"
           onClick={() => logger.debug("Test info/debug log from button click")}
         >
           情報（クリックで情報ログ）
-        </button>
+        </Button>
       </div>
     </div>
   );
