@@ -1,4 +1,5 @@
 import { flexRender } from "@tanstack/react-table";
+import type { KeyboardEvent } from "react";
 
 import { css } from "@/styled-system/css";
 import {
@@ -39,7 +40,7 @@ export default function TanstackTableHeader<T>({
                   : "none";
             const toggleSorting = header.column.getToggleSortingHandler();
             const handleKeyDown = (
-              event: React.KeyboardEvent<HTMLTableCellElement>,
+              event: KeyboardEvent<HTMLTableCellElement>,
             ) => {
               if (!canSort) {
                 return;

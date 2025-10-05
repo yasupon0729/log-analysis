@@ -10,6 +10,7 @@ import {
   type RowSelectionState,
   type SortingState,
   useReactTable,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { useState } from "react";
 
@@ -22,6 +23,7 @@ import {
 } from "@/styles/recipes/components/data-table.recipe";
 
 import BulkActionsToolbar from "./BulkActionsToolbar";
+import ColumnVisibilityToggle from "./ColumnVisibilityToggle";
 import GlobalFilter from "./GlobalFilter";
 import Pagination from "./Pagination";
 import TanstackTableBody from "./TanstackTableBody";
@@ -56,7 +58,7 @@ export default function TanstackTable<T>({
   error = null,
   onBulkDelete,
   globalFilterPlaceholder = "全列を検索",
-  pageSize = 10,
+  pageSize = 500,
   enableRowSelection = Boolean(onBulkDelete),
   getRowId,
   showDebugState = false,
@@ -69,6 +71,7 @@ export default function TanstackTable<T>({
     pageSize,
   });
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   const table = useReactTable({
     data,
@@ -79,13 +82,16 @@ export default function TanstackTable<T>({
       globalFilter,
       pagination,
       rowSelection,
+      columnVisibility,
     },
     enableRowSelection,
+    enableHiding: true,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     onPaginationChange: setPagination,
     onRowSelectionChange: enableRowSelection ? setRowSelection : undefined,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -158,6 +164,8 @@ export default function TanstackTable<T>({
         />
       ) : null}
 
+      <ColumnVisibilityToggle table={table} />
+
       {enableRowSelection && selectedCount > 0 ? (
         <BulkActionsToolbar
           selectedCount={selectedCount}
@@ -198,6 +206,7 @@ export default function TanstackTable<T>({
               globalFilter,
               pagination,
               rowSelection,
+              columnVisibility,
             },
             null,
             2,

@@ -1,4 +1,5 @@
 export { default as BulkActionsToolbar } from "./BulkActionsToolbar";
+export { default as ColumnVisibilityToggle } from "./ColumnVisibilityToggle";
 export { default as Pagination } from "./Pagination";
 export { default as TanstackTable } from "./TanstackTable";
 export { default as TanstackTableBody } from "./TanstackTableBody";

@@ -13,7 +13,7 @@ interface PaginationProps<T> {
   table: Table<T>;
 }
 
-const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100];
+const PAGE_SIZE_OPTIONS = [50, 100, 250, 500, 1000];
 
 export default function Pagination<T>({ table }: PaginationProps<T>) {
   const pageCount = table.getPageCount();

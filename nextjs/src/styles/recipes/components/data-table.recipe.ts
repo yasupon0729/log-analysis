@@ -316,6 +316,68 @@ export const dataTableGlobalFilterInputRecipe = cva({
   },
 });
 
+export const dataTableColumnVisibilityContainerRecipe = cva({
+  base: {
+    display: "flex",
+    flexDirection: { base: "column", md: "row" },
+    alignItems: { base: "flex-start", md: "center" },
+    gap: 3,
+    paddingX: 4,
+    paddingY: 3,
+    borderBottom: "thin",
+    borderColor: "border.default",
+    backgroundColor: "dark.surface",
+  },
+});
+
+export const dataTableColumnVisibilityLabelRecipe = cva({
+  base: {
+    fontSize: "sm",
+    color: "text.secondary",
+    whiteSpace: "nowrap",
+  },
+});
+
+export const dataTableColumnVisibilityListRecipe = cva({
+  base: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 2,
+  },
+});
+
+export const dataTableColumnVisibilityItemRecipe = cva({
+  base: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 2,
+    paddingX: 3,
+    paddingY: 1.5,
+    borderRadius: "md",
+    backgroundColor: "dark.surfaceActive",
+    color: "text.secondary",
+    fontSize: "sm",
+    transition: "background-color 0.2s, color 0.2s, border-color 0.2s",
+    border: "thin",
+    borderColor: "border.subtle",
+    cursor: "pointer",
+    _hover: {
+      backgroundColor: "dark.surfaceHover",
+      color: "text.primary",
+      borderColor: "primary.500",
+    },
+  },
+});
+
+export const dataTableColumnVisibilityCheckboxRecipe = cva({
+  base: {
+    width: 4,
+    height: 4,
+    accentColor: "primary.500",
+    cursor: "pointer",
+  },
+});
+
 export const dataTablePaginationContainerRecipe = cva({
   base: {
     display: "flex",
