@@ -50,6 +50,11 @@ interface DecodeResult {
   didDecompress: boolean;
 }
 
+type SupportedFileType = "encrypted" | "gzip" | "zip" | "plain";
+
+const SUPPORTED_EXTENSIONS_DESCRIPTION =
+  "対応形式: .log.gz.enc / .zip / .gz / .log / .json";
+
 export default function UploadLogClient() {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -67,17 +72,34 @@ export default function UploadLogClient() {
     async (file: File) => {
       resetState();
       setIsLoading(true);
-      logger.info("Log file selected", {
-        component: "UploadLogClient",
-        filename: file.name,
-        size: file.size,
-      });
 
       try {
+        const fileType = detectFileType(file.name);
+        if (!fileType) {
+          const message = "サポートされていないファイル形式です";
+          setErrorMessage(message);
+          logger.error("Unsupported log file type", {
+            component: "UploadLogClient",
+            filename: file.name,
+          });
+          return;
+        }
+
+        logger.info("Log file selected", {
+          component: "UploadLogClient",
+          filename: file.name,
+          size: file.size,
+          fileType,
+        });
+
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("decompress", "true");
         formData.append("encoding", "utf8");
+        formData.append("fileType", fileType);
+        formData.append(
+          "decompress",
+          fileType === "encrypted" || fileType === "gzip" ? "true" : "false",
+        );
 
         const response = await fetch("/api/logs/decode", {
           method: "POST",
@@ -123,6 +145,7 @@ export default function UploadLogClient() {
         logger.info("Log decode succeeded", {
           component: "UploadLogClient",
           filename: file.name,
+          fileType,
           encryptedSize: data.encryptedSize,
           decryptedSize: data.decryptedSize,
           logSize: data.logSize,
@@ -200,11 +223,12 @@ export default function UploadLogClient() {
       <section className={uploadIntroSectionRecipe()}>
         <h1 className={uploadTitleRecipe()}>暗号化ログのアップロード検証</h1>
         <p className={uploadDescriptionRecipe()}>
-          <span>S3から取得した</span>
-          <code className={uploadDescriptionCodeRecipe()}>.log.gz.enc</code>
           <span>
-            ファイルをドラッグ＆ドロップするか、ファイル選択から読み込むと復号して内容を表示します。
+            ファイルをドラッグ＆ドロップするか、ファイル選択から読み込むと内容を表示します。
           </span>
+          <code className={uploadDescriptionCodeRecipe()}>
+            {SUPPORTED_EXTENSIONS_DESCRIPTION}
+          </code>
         </p>
       </section>
 
@@ -224,7 +248,7 @@ export default function UploadLogClient() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".enc,.gz,.log"
+          accept=".enc,.gz,.log,.json,.zip"
           className={uploadHiddenInputRecipe()}
           onChange={onInputChange}
         />
@@ -284,6 +308,32 @@ function formatBytes(value: number): string {
   }
 
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function detectFileType(filename: string): SupportedFileType | null {
+  const lower = filename.toLowerCase();
+
+  if (lower.endsWith(".log.gz.enc") || lower.endsWith(".gz.enc")) {
+    return "encrypted";
+  }
+
+  if (lower.endsWith(".enc")) {
+    return "encrypted";
+  }
+
+  if (lower.endsWith(".zip")) {
+    return "zip";
+  }
+
+  if (lower.endsWith(".gz")) {
+    return "gzip";
+  }
+
+  if (lower.endsWith(".log") || lower.endsWith(".json")) {
+    return "plain";
+  }
+
+  return null;
 }
 
 const rawLogDetailsClass = css({
