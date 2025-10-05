@@ -5,10 +5,20 @@ import { useCallback, useState } from "react";
 import {
   type LogDecodeResult,
   LogDecodeResultView,
+  type LogDecodeSource,
 } from "@/components/logs/LogDecodeResultView";
 import { LogFileDropZone } from "@/components/upload/LogFileDropZone";
+import {
+  S3LogFetcher,
+  type S3LogEnvironment,
+} from "@/components/upload/S3LogFetcher";
 import { UploadIntro } from "@/components/upload/UploadIntro";
 import { logger } from "@/lib/logger/client";
+import {
+  detectFileTypeFromName,
+  SUPPORTED_EXTENSIONS_DESCRIPTION,
+  SUPPORTED_FILE_ACCEPT,
+} from "@/lib/logs/file-types";
 import {
   uploadErrorAlertRecipe,
   uploadPageContainerRecipe,
@@ -21,6 +31,7 @@ interface DecodeSuccess {
   decryptedSize: number;
   logSize: number;
   didDecompress: boolean;
+  sources?: LogDecodeSource[];
 }
 
 interface DecodeError {
@@ -30,10 +41,23 @@ interface DecodeError {
 
 type DecodeResponse = DecodeSuccess | DecodeError;
 
-type SupportedFileType = "encrypted" | "gzip" | "zip" | "plain";
+interface S3SuccessResponse {
+  ok: true;
+  date: string;
+  logText: string;
+  encryptedSize: number;
+  decryptedSize: number;
+  logSize: number;
+  didDecompress: boolean;
+  sources: LogDecodeSource[];
+}
 
-const SUPPORTED_EXTENSIONS_DESCRIPTION =
-  "対応形式: .log.gz.enc / .zip / .gz / .log / .json";
+interface S3ErrorResponse {
+  ok: false;
+  error: string;
+}
+
+type S3Response = S3SuccessResponse | S3ErrorResponse;
 
 export default function UploadLogClient() {
   const [isLoading, setIsLoading] = useState(false);
@@ -51,7 +75,7 @@ export default function UploadLogClient() {
       setIsLoading(true);
 
       try {
-        const fileType = detectFileType(file.name);
+        const fileType = detectFileTypeFromName(file.name);
         if (!fileType) {
           const message = "サポートされていないファイル形式です";
           setErrorMessage(message);
@@ -108,14 +132,14 @@ export default function UploadLogClient() {
           return;
         }
 
-        const success = data;
         const decodeResult: LogDecodeResult = {
           filename: file.name,
-          logText: success.logText,
-          encryptedSize: success.encryptedSize,
-          decryptedSize: success.decryptedSize,
-          logSize: success.logSize,
-          didDecompress: success.didDecompress,
+          logText: data.logText,
+          encryptedSize: data.encryptedSize,
+          decryptedSize: data.decryptedSize,
+          logSize: data.logSize,
+          didDecompress: data.didDecompress,
+          sources: data.sources,
         };
 
         setResult(decodeResult);
@@ -155,6 +179,69 @@ export default function UploadLogClient() {
     [handleFile],
   );
 
+  const fetchFromS3 = useCallback(
+    async ({ date, environment }: { date: string; environment: S3LogEnvironment }) => {
+      resetState();
+      setIsLoading(true);
+
+      try {
+        const search = new URLSearchParams({
+          date,
+          environment,
+        });
+        const response = await fetch(`/api/logs/s3?${search.toString()}`);
+        const data = (await response.json()) as S3Response;
+
+        if (!response.ok || !data.ok) {
+          const message = data.ok
+            ? `S3ログ取得でエラーが発生しました (${response.status})`
+            : data.error;
+          setErrorMessage(message);
+          logger.error("S3 log fetch failed", {
+            component: "UploadLogClient",
+            date,
+            environment,
+            status: response.status,
+            error: message,
+          });
+          return;
+        }
+
+        const decodeResult: LogDecodeResult = {
+          filename: `S3 ${data.date}`,
+          logText: data.logText,
+          encryptedSize: data.encryptedSize,
+          decryptedSize: data.decryptedSize,
+          logSize: data.logSize,
+          didDecompress: data.didDecompress,
+          sources: data.sources,
+        };
+
+        setResult(decodeResult);
+        logger.info("S3 log fetch succeeded", {
+          component: "UploadLogClient",
+          date,
+          environment,
+          objectCount: data.sources.length,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "S3ログ取得でエラーが発生しました";
+        setErrorMessage(message);
+        logger.error("S3 log fetch threw", {
+          component: "UploadLogClient",
+          error: message,
+          environment,
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [resetState],
+  );
+
   return (
     <div className={uploadPageContainerRecipe()}>
       <UploadIntro
@@ -170,10 +257,12 @@ export default function UploadLogClient() {
       />
 
       <LogFileDropZone
-        accept=".enc,.gz,.log,.json,.zip"
+        accept={SUPPORTED_FILE_ACCEPT}
         isLoading={isLoading}
         onFilesSelected={handleFiles}
       />
+
+      <S3LogFetcher isLoading={isLoading} onFetch={fetchFromS3} />
 
       {errorMessage ? (
         <div className={uploadErrorAlertRecipe()}>
@@ -184,30 +273,4 @@ export default function UploadLogClient() {
       {result ? <LogDecodeResultView result={result} /> : null}
     </div>
   );
-}
-
-function detectFileType(filename: string): SupportedFileType | null {
-  const lower = filename.toLowerCase();
-
-  if (lower.endsWith(".log.gz.enc") || lower.endsWith(".gz.enc")) {
-    return "encrypted";
-  }
-
-  if (lower.endsWith(".enc")) {
-    return "encrypted";
-  }
-
-  if (lower.endsWith(".zip")) {
-    return "zip";
-  }
-
-  if (lower.endsWith(".gz")) {
-    return "gzip";
-  }
-
-  if (lower.endsWith(".log") || lower.endsWith(".json")) {
-    return "plain";
-  }
-
-  return null;
 }

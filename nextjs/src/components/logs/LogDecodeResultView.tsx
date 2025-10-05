@@ -1,4 +1,5 @@
 import { LogEntriesTable } from "@/components/logs/LogEntriesTable";
+import type { SupportedFileType } from "@/lib/logs/file-types";
 import { css } from "@/styled-system/css";
 import {
   uploadLogViewerRecipe,
@@ -8,6 +9,15 @@ import {
   uploadResultTitleRecipe,
 } from "@/styles/recipes/components/upload-log-client.recipe";
 
+export interface LogDecodeSource {
+  name: string;
+  fileType: SupportedFileType;
+  originalSize: number;
+  processedSize: number;
+  logSize: number;
+  didDecompress: boolean;
+}
+
 export interface LogDecodeResult {
   filename: string;
   logText: string;
@@ -15,6 +25,7 @@ export interface LogDecodeResult {
   decryptedSize: number;
   logSize: number;
   didDecompress: boolean;
+  sources?: LogDecodeSource[];
 }
 
 interface LogDecodeResultViewProps {
@@ -37,6 +48,28 @@ export function LogDecodeResultView({
           <span>解凍状態: {result.didDecompress ? "解凍済み" : "未解凍"}</span>
         </div>
       </header>
+
+      {result.sources && result.sources.length > 0 ? (
+        <div className={sourceListClass}>
+          <h3 className={sourceTitleClass}>ファイル詳細</h3>
+          <ul className={sourceItemsClass}>
+            {result.sources.map((source) => (
+              <li key={`${source.name}-${source.processedSize}`}>
+                <span className={sourceNameClass}>{source.name}</span>
+                <span>種別: {source.fileType}</span>
+                <span>元サイズ: {formatBytes(source.originalSize)}</span>
+                <span>
+                  処理後サイズ: {formatBytes(source.processedSize)} / ログ:
+                  {formatBytes(source.logSize)}
+                </span>
+                <span>
+                  解凍: {source.didDecompress ? "解凍済み" : "未解凍"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <LogEntriesTable logText={result.logText} />
 
@@ -84,3 +117,27 @@ function formatBytes(value: number): string {
 
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
+
+const sourceListClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+  marginBottom: 4,
+});
+
+const sourceTitleClass = css({
+  fontSize: "md",
+  fontWeight: "semibold",
+});
+
+const sourceItemsClass = css({
+  listStyle: "none",
+  margin: 0,
+  padding: 0,
+  display: "grid",
+  gap: 2,
+});
+
+const sourceNameClass = css({
+  fontWeight: "medium",
+});
