@@ -1,13 +1,10 @@
 "use client";
 
-import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
 
+import TanstackTable from "@/components/tanstack-table/TanstackTable";
+import type { CustomColumnMeta } from "@/components/tanstack-table/types";
 import { css } from "@/styled-system/css";
 
 type LogRow = Record<string, unknown>;
@@ -22,93 +19,63 @@ interface ParseResult {
   total: number;
 }
 
-const tableContainerClass = css({
-  overflowX: "auto",
-  borderRadius: "md",
-  border: "thin",
-  borderColor: "border.default",
-  backgroundColor: "neutral.900",
-});
-
-const tableClass = css({
-  width: "100%",
-  minWidth: "640px",
-  borderCollapse: "collapse",
-  fontSize: "sm",
-  color: "neutral.100",
-});
-
-const headerCellClass = css({
-  textAlign: "left",
-  padding: 3,
-  fontSize: "xs",
-  fontWeight: "semibold",
-  textTransform: "uppercase",
-  letterSpacing: "widest",
-  borderBottom: "thin",
-  borderColor: "border.subtle",
-  backgroundColor: "neutral.800",
-});
-
-const bodyRowClass = css({
-  transition: "background 0.2s",
-  _hover: {
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
-  },
-});
-
-const bodyCellClass = css({
-  padding: 3,
-  verticalAlign: "top",
-  borderBottom: "thin",
-  borderColor: "border.subtle",
-  whiteSpace: "normal",
-  wordBreak: "break-word",
-});
-
-const noDataClass = css({
-  padding: 4,
-  textAlign: "center",
-  color: "text.secondary",
-});
-
 const infoTextClass = css({
   marginTop: 2,
   fontSize: "xs",
   color: "text.secondary",
 });
 
+const emptyContainerClass = css({
+  borderRadius: "lg",
+  border: "thin",
+  borderColor: "border.default",
+  backgroundColor: "dark.surface",
+  paddingY: 10,
+  textAlign: "center",
+  color: "text.secondary",
+});
+
+const tableWrapperClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+});
+
 export function LogEntriesTable({ logText }: LogEntriesTableProps) {
   const parsed = useMemo(() => parseLogText(logText), [logText]);
 
-  const columnKeys = useMemo(() => {
+  const columns = useMemo<ColumnDef<LogRow, unknown>[]>(() => {
     const keys = new Set<string>();
     for (const row of parsed.rows) {
       for (const key of Object.keys(row)) {
         keys.add(key);
       }
     }
-    return Array.from(keys).sort();
+
+    return Array.from(keys)
+      .sort((a, b) => a.localeCompare(b, "ja"))
+      .map((key) => {
+        const meta: CustomColumnMeta = {
+          cellType: "text",
+          filterVariant: "text",
+          enableGlobalFilter: true,
+        };
+
+        return {
+          accessorKey: key,
+          header: key,
+          enableColumnFilter: true,
+          enableGlobalFilter: true,
+          meta,
+          cell: (context) => formatCellValue(context.getValue()),
+        } satisfies ColumnDef<LogRow, unknown>;
+      });
   }, [parsed.rows]);
-
-  const columns = useMemo<ColumnDef<LogRow>[]>(() => {
-    return columnKeys.map((key) => ({
-      accessorKey: key,
-      header: key,
-      cell: (info) => formatCellValue(info.getValue()),
-    }));
-  }, [columnKeys]);
-
-  const table = useReactTable({
-    data: parsed.rows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
 
   if (parsed.rows.length === 0) {
     return (
-      <div className={tableContainerClass}>
-        <div className={noDataClass}>表示できるJSONエントリがありません</div>
+      <div className={emptyContainerClass}>
+        表示できるJSONエントリがありません
         {parsed.failed > 0 ? (
           <p className={infoTextClass}>
             {parsed.failed}件の行はJSONとして解析できませんでした。
@@ -119,38 +86,13 @@ export function LogEntriesTable({ logText }: LogEntriesTableProps) {
   }
 
   return (
-    <div>
-      <div className={tableContainerClass}>
-        <table className={tableClass}>
-          <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} className={headerCellClass}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className={bodyRowClass}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className={bodyCellClass}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className={tableWrapperClass}>
+      <TanstackTable
+        data={parsed.rows}
+        columns={columns}
+        enableRowSelection={false}
+        pageSize={25}
+      />
       {parsed.failed > 0 ? (
         <p className={infoTextClass}>
           {parsed.failed}件の行はJSONとして解析できませんでした。
