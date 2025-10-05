@@ -1,13 +1,18 @@
 "use client";
 
-import type { ColumnDef } from "@tanstack/react-table";
+import type { ColumnDef, FilterFn, SortingFn } from "@tanstack/react-table";
 import { useMemo } from "react";
 
 import TanstackTable from "@/components/tanstack-table/TanstackTable";
-import type { CustomColumnMeta } from "@/components/tanstack-table/types";
+import type {
+  CustomColumnMeta,
+  DateRangeFilterValue,
+} from "@/components/tanstack-table/types";
 import { css } from "@/styled-system/css";
 
 type LogRow = Record<string, unknown>;
+
+const TIME_FIELD = "time";
 
 interface LogEntriesTableProps {
   logText: string;
@@ -41,6 +46,62 @@ const tableWrapperClass = css({
   gap: 2,
 });
 
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+const timeSortingFn: SortingFn<LogRow> = (rowA, rowB, columnId) => {
+  const valueA = parseIsoTimestamp(rowA.getValue(columnId));
+  const valueB = parseIsoTimestamp(rowB.getValue(columnId));
+
+  if (valueA === null && valueB === null) {
+    return 0;
+  }
+  if (valueA === null) {
+    return 1;
+  }
+  if (valueB === null) {
+    return -1;
+  }
+
+  return valueA - valueB;
+};
+
+const timeFilterFn: FilterFn<LogRow> = (row, columnId, filterValue) => {
+  if (!filterValue || typeof filterValue !== "object") {
+    return true;
+  }
+
+  const { start, end } = filterValue as DateRangeFilterValue;
+  const timestamp = parseIsoTimestamp(row.getValue(columnId));
+
+  if (timestamp === null) {
+    return false;
+  }
+
+  if (start) {
+    const startTime = parseIsoTimestamp(start);
+    if (startTime !== null && timestamp < startTime) {
+      return false;
+    }
+  }
+
+  if (end) {
+    const endTime = parseIsoTimestamp(end);
+    if (endTime !== null && timestamp > endTime) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export function LogEntriesTable({ logText }: LogEntriesTableProps) {
   const parsed = useMemo(() => parseLogText(logText), [logText]);
 
@@ -55,6 +116,26 @@ export function LogEntriesTable({ logText }: LogEntriesTableProps) {
     return Array.from(keys)
       .sort((a, b) => a.localeCompare(b, "ja"))
       .map((key) => {
+        if (key === TIME_FIELD) {
+          const meta: CustomColumnMeta = {
+            cellType: "date",
+            filterVariant: "dateRange",
+            filterPlaceholder: "開始 ISO8601",
+            enableGlobalFilter: false,
+          };
+
+          return {
+            accessorKey: key,
+            header: key,
+            enableColumnFilter: true,
+            enableGlobalFilter: false,
+            sortingFn: timeSortingFn,
+            filterFn: timeFilterFn,
+            meta,
+            cell: (context) => formatTimeValue(context.getValue()),
+          } satisfies ColumnDef<LogRow, unknown>;
+        }
+
         const meta: CustomColumnMeta = {
           cellType: "text",
           filterVariant: "text",
@@ -91,7 +172,6 @@ export function LogEntriesTable({ logText }: LogEntriesTableProps) {
         data={parsed.rows}
         columns={columns}
         enableRowSelection={false}
-        pageSize={25}
       />
       {parsed.failed > 0 ? (
         <p className={infoTextClass}>
@@ -156,4 +236,66 @@ function formatCellValue(value: unknown): string {
   }
 
   return JSON.stringify(value);
+}
+
+function formatTimeValue(value: unknown): string {
+  if (typeof value !== "string") {
+    return formatCellValue(value);
+  }
+
+  const timestamp = parseIsoTimestamp(value);
+  if (timestamp === null) {
+    return value;
+  }
+
+  const date = new Date(timestamp);
+  return `${dateFormatter.format(date)} (${value})`;
+}
+
+function parseIsoTimestamp(value: unknown): number | null {
+  return parseFlexibleDate(value);
+}
+
+function parseFlexibleDate(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const direct = Date.parse(trimmed);
+  if (!Number.isNaN(direct)) {
+    return direct;
+  }
+
+  const match = trimmed.match(
+    /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,6}))?)?)?)?$/,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, hour = "0", minute = "0", second = "0", fraction] =
+    match;
+
+  let milliseconds = 0;
+  if (fraction) {
+    const fractionPadded = `${fraction}000`.slice(0, 3);
+    milliseconds = Number(fractionPadded);
+  }
+
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    milliseconds,
+  );
+
+  const timestamp = date.getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
 }

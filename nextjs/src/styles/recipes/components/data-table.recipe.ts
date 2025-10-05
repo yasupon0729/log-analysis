@@ -167,6 +167,14 @@ export const dataTableFilterSelectRecipe = cva({
   },
 });
 
+export const dataTableFilterDateRangeContainerRecipe = cva({
+  base: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+  },
+});
+
 export const dataTableBodyRecipe = cva({
   base: {
     backgroundColor: "transparent",

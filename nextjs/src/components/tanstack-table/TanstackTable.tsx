@@ -2,6 +2,7 @@
 
 import {
   type ColumnFiltersState,
+  type FilterFn,
   getCoreRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
@@ -28,7 +29,85 @@ import GlobalFilter from "./GlobalFilter";
 import Pagination from "./Pagination";
 import TanstackTableBody from "./TanstackTableBody";
 import TanstackTableHeader from "./TanstackTableHeader";
-import type { TableProps } from "./types";
+import type { DateRangeFilterValue, TableProps } from "./types";
+
+function parseIsoTimestamp(value: unknown): number | null {
+  return parseFlexibleDate(value);
+}
+
+function parseFlexibleDate(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const direct = Date.parse(trimmed);
+  if (!Number.isNaN(direct)) {
+    return direct;
+  }
+
+  const match = trimmed.match(
+    /^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,6}))?)?)?)?$/,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, hour = "0", minute = "0", second = "0", fraction] =
+    match;
+
+  let milliseconds = 0;
+  if (fraction) {
+    const fractionPadded = `${fraction}000`.slice(0, 3);
+    milliseconds = Number(fractionPadded);
+  }
+
+  const date = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    milliseconds,
+  );
+
+  const timestamp = date.getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+const dateRangeFilter: FilterFn<unknown> = (row, columnId, filterValue) => {
+  if (!filterValue || typeof filterValue !== "object") {
+    return true;
+  }
+
+  const { start, end } = filterValue as DateRangeFilterValue;
+  const rawValue = row.getValue(columnId);
+  const timestamp = parseIsoTimestamp(rawValue);
+
+  if (timestamp === null) {
+    return false;
+  }
+
+  if (start) {
+    const startTime = parseIsoTimestamp(start);
+    if (startTime !== null && timestamp < startTime) {
+      return false;
+    }
+  }
+
+  if (end) {
+    const endTime = parseIsoTimestamp(end);
+    if (endTime !== null && timestamp > endTime) {
+      return false;
+    }
+  }
+
+  return true;
+};
 
 interface TanstackTableComponentProps<T> extends TableProps<T> {
   onBulkDelete?: (rowIds: string[]) => void;
@@ -86,6 +165,9 @@ export default function TanstackTable<T>({
     },
     enableRowSelection,
     enableHiding: true,
+    filterFns: {
+      dateRange: dateRangeFilter,
+    },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
