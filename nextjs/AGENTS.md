@@ -1,39 +1,76 @@
-# Repository Guidelines
+# Repository Guidance
 
-## Project Structure & Module Organization
-- `src/app/` houses Next.js App Router routes; `page.tsx` contains server logging and delegates UI to `page-client.tsx`.
-- `src/lib/api/` centralizes API clients (`s3/`, shared `client.ts`, `server-client.ts`) and error handling; import via `@/lib/...`.
-- `src/lib/logger/` wraps Pino for server and browser usage; `logs/` captures rotated files during local runs.
-- UI primitives live under `src/components/`, while design tokens and Panda CSS helpers sit in `src/styles/` and `styled-system/`.
+## プロジェクト概要
+- S3上の暗号化ログを取得し、Next.js App Routerで閲覧するダッシュボードです。
+- フロントエンドはPanda CSSでダーク＋ブルー基調、サーバー／ブラウザ双方でPinoラッパーによるロギングを行います。
+- 主要ディレクトリ:
+  - `src/app/` – ルーティングとページ。`page.tsx`はサーバーログ発行、UIはクライアント側へ委譲。
+  - `src/lib/` – APIクライアント、S3ラッパー、ログユーティリティなどの共通ロジック。
+  - `styled-system/` – Panda CSSの生成物。`npm run format`/`npm run lint`後も同期を維持。
 
-## Build, Test, and Development Commands
-- `npm run dev` — start the Turbopack-powered dev server at `http://localhost:3000`.
-- `npm run build` — create a production bundle; run before PRs that change runtime behavior.
-- `npm run start` — serve the production build locally.
-- `npm run lint` — execute Biome checks for linting and type-aware rules.
-- `npm run format` — apply Biome formatting; prefer running after edits.
-- `npm run kill` — free port 3000 if a stale dev server lingers.
+## 環境構築 (/.README.md ベース)
+### 必須要件
+- Node.js 18.18 以上（Bun利用時も内部で使用）
+- Git / WSL2（Windowsの場合）
+- AWS IAMユーザー: `s3:ListBucket` と `s3:GetObject` 権限（対象プレフィックス: `logs/`）
 
-## Coding Style & Naming Conventions
-- TypeScript `strict` is enabled; favor explicit types when inference is unclear.
-- Follow Biome’s formatting (2-space indent, trailing commas, single quotes) via `npm run format`.
-- React components use PascalCase filenames; hooks/utilities remain in camelCase.
-- When logging, pass structured objects: `logger.info("event", { context })`.
+### 推奨ツール
+- Bun 最新版（高速なスクリプト実行用）
+- Biome (Lint/Format)
+- VSCode はリポジトリルート `/home/yasunari/KNiT/log-analysis` から起動
 
-## Testing Guidelines
-- No automated test suite exists yet; when adding tests, colocate under `src/` and mirror the feature path.
-- Prefer Playwright or Jest for UI/API layers; name files `<feature>.test.ts(x)`.
-- Until coverage targets are defined, aim to exercise new branches manually via `npm run dev` and representative S3 scenarios.
+### セットアップ手順概要
+1. Bun をインストール
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   bun --version
+   ```
+2. リポジトリをクローンし `nextjs/` へ移動
+3. 依存関係の取得
+   - Bun 利用: `bun install`
+   - npm 利用: `npm install`
+4. Panda CSS コード生成が必要な場合: `bunx panda codegen` または `npm run dev` 時に自動生成
 
-## Commit & Pull Request Guidelines
-- Existing history uses concise Japanese summaries (e.g., "biome の設定をfix"); keep messages short, present-tense, and scoped to one change.
-- Reference issues in the body when applicable and note any follow-up tasks.
-- Pull requests should describe behavior changes, include manual validation steps (command/output), and attach UI screenshots when styles shift.
-- Mention required secrets or env vars (`S3_API_ENDPOINT`, `AWS_REGION`, etc.) if reviewers need them for verification.
+## 実行・ビルド
+- 開発サーバー: `npm run dev`（Turbopack）。Bunを使う場合は `bun dev` 相当のスクリプトで置き換え可能。
+- 本番ビルド: `npm run build`
+- 本番起動: `npm run start`
+- Lint: `npm run lint` （Biom e check）
+- Format: `npm run format`
+- Bun運用例 (/.README.md 記載):
+  - ルート `package.json` で `bun dev` → `cd nextjs && bun dev`
+  - `nextjs/package.json` では `bunx panda --watch & next dev` 等が想定
 
-## Communication
-- 本リポジトリに関するエージェントからの回答は、すべて日本語で記述してください。
+## 環境変数と秘密情報
+- `.env.local` に以下を設定し、コミットしないこと:
+  - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
+  - `LOG_ENCRYPTION_KEY` (AES-256-CBC用32バイトキー)
+- サーバーサイドでS3アクセスを行い、クライアントにはキーや資格情報を露出しない。
 
-## Configuration Tips
-- Store AWS credentials via environment variables or `.env.local`; never commit secrets.
-- Update `next.config.ts` or `panda.config.ts` alongside code changes that depend on them, and document new config flags in the PR.
+## ログ復号フロー
+- `/api/logs/decode` で `multipart/form-data` を受け取り `LOG_ENCRYPTION_KEY` を用いた復号＋gunzip を実施。
+- `/upload` ページからドラッグ＆ドロップで `.log.gz.enc` をアップロードすると復号結果が表示される。
+- 共通ユーティリティ `src/lib/logs/decoder.ts` を使用して鍵の検証・復号・解凍を一貫処理する。
+
+## コーディング・スタイル
+- TypeScript `strict`。不明確な型は明示的に指定。
+- コメントは必要最小限。複雑な処理前に1行で要点を注記。
+- ログは `logger.info("event", { context })` のように構造化オブジェクトで出力。
+- React コンポーネントは PascalCase、ユーティリティやフックは camelCase。
+
+## テスト/検証
+- 自動テストは未整備。機能追加時は手動で `/upload` や S3 連携を検証。
+- 新規テストを追加する場合は `src/` 配下に機能と同階層で配置し、`<feature>.test.ts(x)` 命名。
+
+## セキュリティとトラブルシュート
+- AWS資格情報は環境変数管理。`.env.local` が壊れている場合は先頭行にコメントを付けるなどで `source` 時のエラーを防ぐ。
+- Panda CSS の生成物が欠落した場合は `bunx panda codegen` を再実行。
+- S3 接続エラー時は IAM 権限とリージョン設定を再確認。
+
+## コミット/PR ポリシー
+- コミットメッセージは簡潔な日本語（例: `ログ復号APIを追加`）。
+- PR では動作確認手順、必要な環境変数、UI変更時のスクリーンショットを添付。
+- フォローアップ作業がある場合は PR 説明に明記。
+
+## コミュニケーション
+- 本リポジトリに関するエージェントからの回答は **必ず日本語** で行うこと。

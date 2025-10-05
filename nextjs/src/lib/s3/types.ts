@@ -89,3 +89,24 @@ export interface S3HeadObjectResult {
   lastModified?: string;
   metadata?: Record<string, string>;
 }
+
+export interface LogRetrievalOptions extends S3GetObjectOptions {
+  encoding?: BufferEncoding;
+  decompress?: boolean;
+  encryptionKey?: Buffer | string;
+}
+
+export interface LogRetrievalResult {
+  key: string;
+  encryptedSize: number;
+  decryptedSize: number;
+  logSize: number;
+  logBuffer: Buffer;
+  logText: string;
+  metadata?: Record<string, string>;
+  etag?: string;
+  lastModified?: string;
+  contentType?: string;
+  contentLength?: number;
+  didDecompress: boolean;
+}
