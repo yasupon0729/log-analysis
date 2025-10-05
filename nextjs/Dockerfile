@@ -3,7 +3,7 @@
 FROM oven/bun:1.2.17-slim AS deps
 WORKDIR /app
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile
+RUN BUN_INSTALL_FROZEN_LOCKFILE=0 bun install
 
 FROM oven/bun:1.2.17-slim AS builder
 WORKDIR /app
@@ -18,7 +18,7 @@ ENV PORT=3729
 ENV HOSTNAME=0.0.0.0
 
 COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production
+RUN BUN_INSTALL_FROZEN_LOCKFILE=0 bun install --production
 
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
