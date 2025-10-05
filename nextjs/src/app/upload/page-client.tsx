@@ -3,8 +3,10 @@
 import type { ChangeEvent, DragEvent } from "react";
 import { useCallback, useRef, useState } from "react";
 
+import { LogEntriesTable } from "@/components/logs/LogEntriesTable";
 import { Button } from "@/components/ui/Button";
 import { logger } from "@/lib/logger/client";
+import { css } from "@/styled-system/css";
 import {
   uploadDescriptionCodeRecipe,
   uploadDescriptionRecipe,
@@ -254,7 +256,13 @@ export default function UploadLogClient() {
             </div>
           </header>
 
-          <pre className={uploadLogViewerRecipe()}>{result.logText}</pre>
+          <LogEntriesTable logText={result.logText} />
+          <details className={rawLogDetailsClass}>
+            <summary className={rawLogSummaryClass}>
+              生のJSONテキストを表示
+            </summary>
+            <pre className={uploadLogViewerRecipe()}>{result.logText}</pre>
+          </details>
         </section>
       ) : null}
     </div>
@@ -277,3 +285,21 @@ function formatBytes(value: number): string {
 
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
+
+const rawLogDetailsClass = css({
+  marginTop: 4,
+  borderTop: "thin",
+  borderColor: "border.subtle",
+  paddingTop: 4,
+  color: "text.secondary",
+});
+
+const rawLogSummaryClass = css({
+  cursor: "pointer",
+  fontWeight: "medium",
+  color: "primary.200",
+  marginBottom: 3,
+  _hover: {
+    color: "primary.100",
+  },
+});
