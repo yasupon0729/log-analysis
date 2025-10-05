@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Sidebar } from "@/components/layouts/Sidebar";
+// import { Sidebar } from "@/components/layouts/Sidebar";
 import { css } from "@/styled-system/css";
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export default function RootLayout({
             bg: "background",
           })}
         >
-          <Sidebar />
+          {/* <Sidebar /> */}
           <main
             className={css({
               flex: 1,
