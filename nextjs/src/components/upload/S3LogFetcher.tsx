@@ -9,25 +9,57 @@ export type S3LogEnvironment = "staging" | "production";
 
 interface S3LogFetcherProps {
   isLoading: boolean;
-  onFetch: (params: { date: string; environment: S3LogEnvironment }) => Promise<void>;
+  onFetch: (params: {
+    startDate: string;
+    endDate: string;
+    environment: S3LogEnvironment;
+  }) => Promise<void>;
 }
 
 export function S3LogFetcher({ isLoading, onFetch }: S3LogFetcherProps) {
   const today = useMemo(() => new Date(), []);
   const defaultDate = useMemo(() => formatDate(today), [today]);
 
-  const [date, setDate] = useState(defaultDate);
+  const [startDate, setStartDate] = useState(defaultDate);
+  const [endDate, setEndDate] = useState(defaultDate);
   const [environment, setEnvironment] = useState<S3LogEnvironment>("staging");
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (!date) {
+      if (!startDate || !endDate) {
         return;
       }
-      await onFetch({ date, environment });
+      await onFetch({ startDate, endDate, environment });
     },
-    [date, environment, onFetch],
+    [startDate, endDate, environment, onFetch],
+  );
+
+  const handleStartDateChange = useCallback(
+    (value: string) => {
+      if (!value) {
+        return;
+      }
+      setStartDate(value);
+      if (endDate < value) {
+        setEndDate(value);
+      }
+    },
+    [endDate],
+  );
+
+  const handleEndDateChange = useCallback(
+    (value: string) => {
+      if (!value) {
+        return;
+      }
+      if (value < startDate) {
+        setEndDate(startDate);
+        return;
+      }
+      setEndDate(value);
+    },
+    [startDate],
   );
 
   return (
@@ -35,13 +67,25 @@ export function S3LogFetcher({ isLoading, onFetch }: S3LogFetcherProps) {
       <h2 className={sectionTitleClass}>S3から取得</h2>
       <form className={fetchFormClass} onSubmit={handleSubmit}>
         <label className={labelClass}>
-          日付を選択
+          開始日
           <input
             type="date"
             className={dateInputClass}
-            value={date}
+            value={startDate}
+            max={endDate || defaultDate}
+            onChange={(event) => handleStartDateChange(event.target.value)}
+            required
+          />
+        </label>
+        <label className={labelClass}>
+          終了日
+          <input
+            type="date"
+            className={dateInputClass}
+            value={endDate}
             max={defaultDate}
-            onChange={(event) => setDate(event.target.value)}
+            min={startDate}
+            onChange={(event) => handleEndDateChange(event.target.value)}
             required
           />
         </label>

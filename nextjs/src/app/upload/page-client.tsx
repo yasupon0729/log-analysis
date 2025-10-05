@@ -43,7 +43,11 @@ type DecodeResponse = DecodeSuccess | DecodeError;
 
 interface S3SuccessResponse {
   ok: true;
-  date: string;
+  startDate: string;
+  endDate: string;
+  requestedDates: string[];
+  fetchedDates: string[];
+  missingDates: string[];
   logText: string;
   encryptedSize: number;
   decryptedSize: number;
@@ -180,13 +184,22 @@ export default function UploadLogClient() {
   );
 
   const fetchFromS3 = useCallback(
-    async ({ date, environment }: { date: string; environment: S3LogEnvironment }) => {
+    async ({
+      startDate,
+      endDate,
+      environment,
+    }: {
+      startDate: string;
+      endDate: string;
+      environment: S3LogEnvironment;
+    }) => {
       resetState();
       setIsLoading(true);
 
       try {
         const search = new URLSearchParams({
-          date,
+          startDate,
+          endDate,
           environment,
         });
         const response = await fetch(`/api/logs/s3?${search.toString()}`);
@@ -199,7 +212,8 @@ export default function UploadLogClient() {
           setErrorMessage(message);
           logger.error("S3 log fetch failed", {
             component: "UploadLogClient",
-            date,
+            startDate,
+            endDate,
             environment,
             status: response.status,
             error: message,
@@ -207,8 +221,12 @@ export default function UploadLogClient() {
           return;
         }
 
+        const rangeLabel =
+          data.startDate === data.endDate
+            ? data.startDate
+            : `${data.startDate}〜${data.endDate}`;
         const decodeResult: LogDecodeResult = {
-          filename: `S3 ${data.date}`,
+          filename: `S3 ${rangeLabel}`,
           logText: data.logText,
           encryptedSize: data.encryptedSize,
           decryptedSize: data.decryptedSize,
@@ -220,10 +238,20 @@ export default function UploadLogClient() {
         setResult(decodeResult);
         logger.info("S3 log fetch succeeded", {
           component: "UploadLogClient",
-          date,
+          startDate: data.startDate,
+          endDate: data.endDate,
           environment,
+          requestedDates: data.requestedDates,
+          fetchedDates: data.fetchedDates,
+          missingDates: data.missingDates,
           objectCount: data.sources.length,
         });
+
+        if (data.missingDates.length > 0) {
+          setErrorMessage(
+            `${data.missingDates.join(", ")} のログは見つかりませんでした`,
+          );
+        }
       } catch (error) {
         const message =
           error instanceof Error
@@ -233,6 +261,8 @@ export default function UploadLogClient() {
         logger.error("S3 log fetch threw", {
           component: "UploadLogClient",
           error: message,
+          startDate,
+          endDate,
           environment,
         });
       } finally {
