@@ -1,9 +1,7 @@
 {
   "name": "log-analysis-workspace",
   "private": true,
-  "workspaces": [
-    "nextjs"
-  ],
+  "workspaces": ["nextjs"],
   "scripts": {
     "dev": "cd nextjs && bun dev",
     "build": "cd nextjs && bun build",

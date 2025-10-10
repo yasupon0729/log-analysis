@@ -9,8 +9,8 @@ import {
 } from "@/components/logs/LogDecodeResultView";
 import { LogFileDropZone } from "@/components/upload/LogFileDropZone";
 import {
-  S3LogFetcher,
   type S3LogEnvironment,
+  S3LogFetcher,
 } from "@/components/upload/S3LogFetcher";
 import { UploadIntro } from "@/components/upload/UploadIntro";
 import { logger } from "@/lib/logger/client";

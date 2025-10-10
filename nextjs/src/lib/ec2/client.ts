@@ -5,6 +5,7 @@
 import { RETRY_CONFIG, getDefaultAWSConfig } from "@/utils";
 import { EC2Client, type EC2ClientConfig } from "@aws-sdk/client-ec2";
 import { logger } from "../logger";
+
 // s
 let ec2Client: EC2Client | null = null;
 
