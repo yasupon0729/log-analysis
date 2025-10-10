@@ -1,15 +1,16 @@
 "use client";
 
 import {
+  type Table,
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  type Table,
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { type FormEvent, useId, useMemo, useState, useTransition } from "react";
 
+import { addInboundRuleAction } from "@/app/ec2/security-groups/[groupId]/actions";
 import { Button } from "@/components/ui/Button";
 import type {
   SecurityGroupWarning,
@@ -20,6 +21,17 @@ import {
   securityGroupDetailBackLinkRecipe,
   securityGroupDetailContainerRecipe,
   securityGroupDetailDescriptionRecipe,
+  securityGroupDetailFormActionsRecipe,
+  securityGroupDetailFormCheckboxLabelRecipe,
+  securityGroupDetailFormContainerRecipe,
+  securityGroupDetailFormFieldRecipe,
+  securityGroupDetailFormGridRecipe,
+  securityGroupDetailFormHelperButtonRecipe,
+  securityGroupDetailFormHelperRecipe,
+  securityGroupDetailFormHelperRowRecipe,
+  securityGroupDetailFormInputRecipe,
+  securityGroupDetailFormLabelRecipe,
+  securityGroupDetailFormMessageRecipe,
   securityGroupDetailHeaderRecipe,
   securityGroupDetailInfoCardRecipe,
   securityGroupDetailInfoGridRecipe,
@@ -53,7 +65,17 @@ interface Props {
   group: SecurityGroupWithWarnings;
 }
 
-const ruleColumnHelper = createColumnHelper<SecurityGroupRule>();
+interface RuleTableRow {
+  name: string;
+  ipVersion: string;
+  type: string;
+  protocol: string;
+  portRange: string;
+  source: string;
+  description: string;
+}
+
+const ruleColumnHelper = createColumnHelper<RuleTableRow>();
 
 export function SecurityGroupDetail({ group }: Props) {
   const router = useRouter();
@@ -62,14 +84,46 @@ export function SecurityGroupDetail({ group }: Props) {
 
   const outboundColumns = useMemo(() => createRuleColumns("Destination"), []);
 
-  const inboundTable = useReactTable<SecurityGroupRule>({
-    data: group.inboundRules,
+  const inboundRows = useMemo(
+    () => flattenRules(group.inboundRules),
+    [group.inboundRules],
+  );
+
+  const outboundRows = useMemo(
+    () => flattenRules(group.outboundRules),
+    [group.outboundRules],
+  );
+
+  const [protocol, setProtocol] = useState<"tcp" | "udp" | "all">("tcp");
+  const [fromPort, setFromPort] = useState("443");
+  const [toPort, setToPort] = useState("443");
+  const [ipVersion, setIpVersion] = useState<"ipv4" | "ipv6">("ipv4");
+  const [cidr, setCidr] = useState("");
+  const [append32, setAppend32] = useState(true);
+  const [description, setDescription] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const portInputsDisabled = protocol === "all";
+  const idBase = useId();
+  const protocolId = `${idBase}-protocol`;
+  const fromPortId = `${idBase}-from-port`;
+  const toPortId = `${idBase}-to-port`;
+  const ipVersionId = `${idBase}-ip-version`;
+  const cidrId = `${idBase}-cidr`;
+  const descriptionId = `${idBase}-description`;
+  const append32Id = `${idBase}-append-32`;
+  const append32InfoId = `${idBase}-append-32-info`;
+
+  const inboundTable = useReactTable<RuleTableRow>({
+    data: inboundRows,
     columns: inboundColumns,
     getCoreRowModel: getCoreRowModel(),
   });
 
-  const outboundTable = useReactTable<SecurityGroupRule>({
-    data: group.outboundRules,
+  const outboundTable = useReactTable<RuleTableRow>({
+    data: outboundRows,
     columns: outboundColumns,
     getCoreRowModel: getCoreRowModel(),
   });
@@ -80,6 +134,112 @@ export function SecurityGroupDetail({ group }: Props) {
   const warningCount = group.warnings.filter(
     (warning) => warning.level === "warning",
   ).length;
+
+  const cidrPlaceholder = ipVersion === "ipv4" ? "203.0.113.10" : "2001:db8::";
+
+  const handleAddInboundRule = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    const rawEntries = cidr
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+
+    if (rawEntries.length === 0) {
+      setErrorMessage("CIDRを入力してください");
+      return;
+    }
+
+    let parsedFrom: number | undefined;
+    let parsedTo: number | undefined;
+
+    if (portInputsDisabled) {
+      parsedFrom = 0;
+      parsedTo = 0;
+    } else {
+      parsedFrom = Number.parseInt(fromPort, 10);
+      if (Number.isNaN(parsedFrom)) {
+        setErrorMessage("開始ポートを入力してください");
+        return;
+      }
+
+      parsedTo = Number.parseInt(toPort, 10);
+      if (Number.isNaN(parsedTo)) {
+        setErrorMessage("終了ポートを入力してください");
+        return;
+      }
+
+      if (
+        !Number.isInteger(parsedFrom) ||
+        parsedFrom < 0 ||
+        parsedFrom > 65535
+      ) {
+        setErrorMessage("開始ポートは0〜65535の整数で指定してください");
+        return;
+      }
+
+      if (!Number.isInteger(parsedTo) || parsedTo < 0 || parsedTo > 65535) {
+        setErrorMessage("終了ポートは0〜65535の整数で指定してください");
+        return;
+      }
+
+      if (parsedFrom > parsedTo) {
+        setErrorMessage("開始ポートは終了ポート以下で指定してください");
+        return;
+      }
+    }
+
+    startTransition(async () => {
+      let successCount = 0;
+
+      for (const rawEntry of rawEntries) {
+        const normalizedEntry =
+          ipVersion === "ipv4" && append32 && !rawEntry.includes("/")
+            ? `${rawEntry}/32`
+            : rawEntry;
+        const displayValue =
+          normalizedEntry === rawEntry
+            ? normalizedEntry
+            : `${rawEntry} (${normalizedEntry})`;
+
+        const result = await addInboundRuleAction({
+          groupId: group.groupId,
+          protocol,
+          ipVersion,
+          cidr: normalizedEntry,
+          fromPort: parsedFrom,
+          toPort: parsedTo,
+          description,
+        });
+
+        if (!result.ok) {
+          setErrorMessage(
+            result.error
+              ? `CIDR "${displayValue}" の追加に失敗しました: ${result.error}`
+              : `CIDR "${displayValue}" の追加に失敗しました`,
+          );
+          return;
+        }
+
+        successCount += 1;
+      }
+
+      setSuccessMessage(
+        successCount > 1
+          ? `インバウンドルールを ${successCount} 件追加しました`
+          : "インバウンドルールを追加しました",
+      );
+      setCidr("");
+      setDescription("");
+      if (!portInputsDisabled) {
+        setFromPort("443");
+        setToPort("443");
+      }
+      router.refresh();
+    });
+  };
 
   return (
     <div className={securityGroupDetailContainerRecipe()}>
@@ -106,10 +266,10 @@ export function SecurityGroupDetail({ group }: Props) {
             VPC: {group.vpcId || "EC2-Classic"}
           </span>
           <span className={securityGroupDetailMetaItemRecipe()}>
-            Inbound {group.inboundRules.length}
+            Inbound {inboundRows.length}
           </span>
           <span className={securityGroupDetailMetaItemRecipe()}>
-            Outbound {group.outboundRules.length}
+            Outbound {outboundRows.length}
           </span>
         </div>
       </div>
@@ -137,7 +297,7 @@ export function SecurityGroupDetail({ group }: Props) {
             Inbound rules
           </span>
           <span className={securityGroupDetailInfoValueRecipe()}>
-            {group.inboundRules.length}
+            {inboundRows.length}
           </span>
         </div>
         <div className={securityGroupDetailInfoCardRecipe()}>
@@ -145,7 +305,7 @@ export function SecurityGroupDetail({ group }: Props) {
             Outbound rules
           </span>
           <span className={securityGroupDetailInfoValueRecipe()}>
-            {group.outboundRules.length}
+            {outboundRows.length}
           </span>
         </div>
         <div className={securityGroupDetailInfoCardRecipe()}>
@@ -178,6 +338,240 @@ export function SecurityGroupDetail({ group }: Props) {
             group.
           </p>
         </div>
+        <form
+          className={securityGroupDetailFormContainerRecipe()}
+          onSubmit={handleAddInboundRule}
+        >
+          <div className={securityGroupDetailFormGridRecipe()}>
+            <div className={securityGroupDetailFormFieldRecipe()}>
+              <label
+                htmlFor={protocolId}
+                className={securityGroupDetailFormLabelRecipe()}
+              >
+                Protocol
+              </label>
+              <select
+                id={protocolId}
+                value={protocol}
+                onChange={(event) => {
+                  const next = event.target.value as "tcp" | "udp" | "all";
+                  setProtocol(next);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  if (next === "all") {
+                    setFromPort("0");
+                    setToPort("0");
+                  } else if (protocol === "all") {
+                    setFromPort("443");
+                    setToPort("443");
+                  }
+                }}
+                className={securityGroupDetailFormInputRecipe()}
+                disabled={isPending}
+              >
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div className={securityGroupDetailFormFieldRecipe()}>
+              <label
+                htmlFor={fromPortId}
+                className={securityGroupDetailFormLabelRecipe()}
+              >
+                From Port
+              </label>
+              <input
+                id={fromPortId}
+                type="number"
+                min={0}
+                max={65535}
+                value={fromPort}
+                onChange={(event) => {
+                  setFromPort(event.target.value);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className={securityGroupDetailFormInputRecipe()}
+                disabled={portInputsDisabled || isPending}
+                placeholder="0"
+              />
+            </div>
+            <div className={securityGroupDetailFormFieldRecipe()}>
+              <label
+                htmlFor={toPortId}
+                className={securityGroupDetailFormLabelRecipe()}
+              >
+                To Port
+              </label>
+              <input
+                id={toPortId}
+                type="number"
+                min={0}
+                max={65535}
+                value={toPort}
+                onChange={(event) => {
+                  setToPort(event.target.value);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className={securityGroupDetailFormInputRecipe()}
+                disabled={portInputsDisabled || isPending}
+                placeholder="65535"
+              />
+            </div>
+            <div className={securityGroupDetailFormFieldRecipe()}>
+              <label
+                htmlFor={ipVersionId}
+                className={securityGroupDetailFormLabelRecipe()}
+              >
+                IP Version
+              </label>
+              <select
+                id={ipVersionId}
+                value={ipVersion}
+                onChange={(event) => {
+                  const next = event.target.value as "ipv4" | "ipv6";
+                  setIpVersion(next);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  if (next === "ipv6") {
+                    setAppend32(false);
+                  } else if (!append32) {
+                    setAppend32(true);
+                  }
+                }}
+                className={securityGroupDetailFormInputRecipe()}
+                disabled={isPending}
+              >
+                <option value="ipv4">IPv4</option>
+                <option value="ipv6">IPv6</option>
+              </select>
+            </div>
+            <div
+              className={securityGroupDetailFormFieldRecipe({ span: "full" })}
+            >
+              <label
+                htmlFor={cidrId}
+                className={securityGroupDetailFormLabelRecipe()}
+              >
+                Source CIDR
+              </label>
+              <input
+                id={cidrId}
+                type="text"
+                value={cidr}
+                onChange={(event) => {
+                  setCidr(event.target.value);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className={securityGroupDetailFormInputRecipe()}
+                placeholder={cidrPlaceholder}
+                disabled={isPending}
+                autoComplete="off"
+              />
+              <span className={securityGroupDetailFormHelperRecipe()}>
+                例: {ipVersion === "ipv4" ? "203.0.113.10" : "2001:db8::/64"}
+                （複数はカンマまたは空白区切りで入力）
+              </span>
+            </div>
+            <div
+              className={securityGroupDetailFormFieldRecipe({ span: "full" })}
+            >
+              <label
+                className={securityGroupDetailFormLabelRecipe()}
+                htmlFor={append32Id}
+              >
+                IPv4 CIDR options
+              </label>
+              <div className={securityGroupDetailFormHelperRowRecipe()}>
+                <label
+                  htmlFor={append32Id}
+                  className={securityGroupDetailFormCheckboxLabelRecipe()}
+                >
+                  <input
+                    id={append32Id}
+                    type="checkbox"
+                    checked={ipVersion === "ipv4" && append32}
+                    onChange={(event) => {
+                      setAppend32(event.target.checked);
+                      setErrorMessage(null);
+                      setSuccessMessage(null);
+                    }}
+                    disabled={ipVersion !== "ipv4" || isPending}
+                  />
+                  /32 を自動付与する
+                </label>
+                <button
+                  id={append32InfoId}
+                  type="button"
+                  onClick={() =>
+                    alert(
+                      "/32 をオンにすると IPv4 アドレスだけを入力した場合に自動で `アドレス/32` の形式へ補完します。CIDR を手動で入力したいときはチェックを外してください。",
+                    )
+                  }
+                  className={securityGroupDetailFormHelperButtonRecipe()}
+                  aria-label="/32 自動付与の説明"
+                >
+                  ?
+                </button>
+              </div>
+            </div>
+            <div
+              className={securityGroupDetailFormFieldRecipe({ span: "full" })}
+            >
+              <label
+                htmlFor={descriptionId}
+                className={securityGroupDetailFormLabelRecipe()}
+              >
+                Description
+              </label>
+              <input
+                id={descriptionId}
+                type="text"
+                value={description}
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className={securityGroupDetailFormInputRecipe()}
+                placeholder="例: Allow HTTPS from corporate network"
+                disabled={isPending}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          {errorMessage && (
+            <span
+              className={securityGroupDetailFormMessageRecipe({
+                tone: "error",
+              })}
+            >
+              {errorMessage}
+            </span>
+          )}
+          {successMessage && (
+            <span
+              className={securityGroupDetailFormMessageRecipe({
+                tone: "success",
+              })}
+            >
+              {successMessage}
+            </span>
+          )}
+          <div className={securityGroupDetailFormActionsRecipe()}>
+            <Button
+              type="submit"
+              disabled={isPending}
+              variant="solid"
+              size="sm"
+            >
+              {isPending ? "Adding..." : "Add inbound rule"}
+            </Button>
+          </div>
+        </form>
         {renderRulesTable(inboundTable, "No inbound rules")}
       </section>
 
@@ -240,10 +634,7 @@ function WarningsSection({ warnings }: { warnings: SecurityGroupWarning[] }) {
   );
 }
 
-function renderRulesTable(
-  table: Table<SecurityGroupRule>,
-  emptyMessage: string,
-) {
+function renderRulesTable(table: Table<RuleTableRow>, emptyMessage: string) {
   const rows = table.getRowModel().rows;
 
   if (rows.length === 0) {
@@ -296,28 +687,36 @@ function renderRulesTable(
 
 function createRuleColumns(targetLabel: string) {
   return [
+    ruleColumnHelper.accessor("name", {
+      header: "Name",
+    }),
+    ruleColumnHelper.accessor("ipVersion", {
+      header: "IP Version",
+    }),
+    ruleColumnHelper.accessor("type", {
+      header: "Type",
+    }),
     ruleColumnHelper.accessor("protocol", {
       header: "Protocol",
-      cell: (info) => formatProtocol(info.getValue()),
     }),
-    ruleColumnHelper.display({
-      id: "portRange",
+    ruleColumnHelper.accessor("portRange", {
       header: "Port Range",
-      cell: ({ row }) =>
-        formatPortRange(row.original.fromPort, row.original.toPort),
     }),
-    ruleColumnHelper.display({
-      id: "target",
+    ruleColumnHelper.accessor("source", {
       header: targetLabel,
-      cell: ({ row }) => (
+      cell: (info) => (
         <span className={securityGroupsTableDescriptionRecipe()}>
-          {formatRuleTargets(row.original)}
+          {info.getValue()}
         </span>
       ),
     }),
     ruleColumnHelper.accessor("description", {
-      header: "Description",
-      cell: (info) => info.getValue() || "—",
+      header: "Description(複数は、半角の「,」区切りで入力)",
+      cell: (info) => (
+        <span className={securityGroupsTableDescriptionRecipe()}>
+          {info.getValue() || "—"}
+        </span>
+      ),
     }),
   ];
 }
@@ -354,21 +753,80 @@ function formatPortRange(fromPort?: number, toPort?: number) {
   return "—";
 }
 
-function formatRuleTargets(rule: SecurityGroupRule) {
-  const cidrTargets = [
-    ...(rule.ipRanges ?? []),
-    ...(rule.ipv6Ranges ?? []),
-  ].filter((target) => target && target.length > 0);
+function flattenRules(rules: SecurityGroupRule[]): RuleTableRow[] {
+  return rules.flatMap((rule) => ruleToRows(rule));
+}
 
-  const securityGroupTargets = rule.securityGroups?.filter(
-    (id) => id.length > 0,
-  );
+function ruleToRows(rule: SecurityGroupRule): RuleTableRow[] {
+  const name = formatRuleName(rule);
+  const protocol = formatProtocol(rule.protocol);
+  const portRange = formatPortRange(rule.fromPort, rule.toPort);
+  const description = rule.description?.trim() ?? "—";
 
-  const targets = [...cidrTargets, ...(securityGroupTargets ?? [])];
+  const rows: RuleTableRow[] = [];
 
-  if (targets.length === 0) {
-    return "—";
+  if (rule.ipRanges?.length) {
+    for (const range of rule.ipRanges) {
+      if (!range?.cidr) continue;
+      rows.push({
+        name,
+        ipVersion: "IPv4",
+        type: "IPv4 CIDR",
+        protocol,
+        portRange,
+        source: range.cidr,
+        description: range.description?.trim() || description,
+      });
+    }
   }
 
-  return targets.join(", ");
+  if (rule.ipv6Ranges?.length) {
+    for (const range of rule.ipv6Ranges) {
+      if (!range?.cidr) continue;
+      rows.push({
+        name,
+        ipVersion: "IPv6",
+        type: "IPv6 CIDR",
+        protocol,
+        portRange,
+        source: range.cidr,
+        description: range.description?.trim() || description,
+      });
+    }
+  }
+
+  if (rule.securityGroups?.length) {
+    for (const peer of rule.securityGroups) {
+      if (!peer?.groupId) continue;
+      rows.push({
+        name,
+        ipVersion: "N/A",
+        type: "Security Group",
+        protocol,
+        portRange,
+        source: peer.groupId,
+        description: peer.description?.trim() || description,
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    rows.push({
+      name,
+      ipVersion: "Unknown",
+      type: "Custom",
+      protocol,
+      portRange,
+      source: "—",
+      description,
+    });
+  }
+
+  return rows;
+}
+
+function formatRuleName(rule: SecurityGroupRule) {
+  const protocolLabel = formatProtocol(rule.protocol);
+  const portLabel = formatPortRange(rule.fromPort, rule.toPort);
+  return `${protocolLabel} ${portLabel}`.trim();
 }

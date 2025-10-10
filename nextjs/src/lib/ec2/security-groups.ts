@@ -24,13 +24,23 @@ export interface SecurityGroupInfo {
   tags?: Record<string, string>;
 }
 
+export interface SecurityGroupCidrRange {
+  cidr: string;
+  description?: string;
+}
+
+export interface SecurityGroupPeer {
+  groupId: string;
+  description?: string;
+}
+
 export interface SecurityGroupRule {
   protocol: string;
   fromPort?: number;
   toPort?: number;
-  ipRanges?: string[];
-  ipv6Ranges?: string[];
-  securityGroups?: string[];
+  ipRanges?: SecurityGroupCidrRange[];
+  ipv6Ranges?: SecurityGroupCidrRange[];
+  securityGroups?: SecurityGroupPeer[];
   description?: string;
 }
 
@@ -118,12 +128,11 @@ export async function checkOpenPorts(
   }[] = [];
 
   for (const rule of group.inboundRules) {
-    // 0.0.0.0/0 からのアクセスを許可しているルールをチェック
-    const publicSources = rule.ipRanges?.filter(
-      (range) => range === "0.0.0.0/0",
-    );
+    const publicSources = (rule.ipRanges ?? [])
+      .filter((range) => range.cidr === "0.0.0.0/0")
+      .map((range) => range.cidr);
 
-    if (publicSources && publicSources.length > 0 && rule.fromPort) {
+    if (publicSources.length > 0 && rule.fromPort !== undefined) {
       for (
         let port = rule.fromPort;
         port <= (rule.toPort ?? rule.fromPort);
@@ -160,15 +169,56 @@ function parseSecurityGroup(sg: SecurityGroup): SecurityGroupInfo {
  * IpPermissionをSecurityGroupRuleに変換
  */
 function parseIpPermissions(permissions: IpPermission[]): SecurityGroupRule[] {
-  return permissions.map((perm) => ({
-    protocol: perm.IpProtocol ?? "-1",
-    fromPort: perm.FromPort,
-    toPort: perm.ToPort,
-    ipRanges: perm.IpRanges?.map((r) => r.CidrIp ?? ""),
-    ipv6Ranges: perm.Ipv6Ranges?.map((r) => r.CidrIpv6 ?? ""),
-    securityGroups: perm.UserIdGroupPairs?.map((g) => g.GroupId ?? ""),
-    description: perm.IpRanges?.[0]?.Description,
-  }));
+  return permissions.map((perm) => {
+    const ipRanges: SecurityGroupCidrRange[] = [];
+    for (const range of perm.IpRanges ?? []) {
+      const cidr = range.CidrIp ?? "";
+      if (!cidr) {
+        continue;
+      }
+      ipRanges.push({
+        cidr,
+        description: range.Description ?? undefined,
+      });
+    }
+
+    const ipv6Ranges: SecurityGroupCidrRange[] = [];
+    for (const range of perm.Ipv6Ranges ?? []) {
+      const cidr = range.CidrIpv6 ?? "";
+      if (!cidr) {
+        continue;
+      }
+      ipv6Ranges.push({
+        cidr,
+        description: range.Description ?? undefined,
+      });
+    }
+
+    const securityGroups: SecurityGroupPeer[] = [];
+    for (const pair of perm.UserIdGroupPairs ?? []) {
+      const groupId = pair.GroupId ?? "";
+      if (!groupId) {
+        continue;
+      }
+      securityGroups.push({
+        groupId,
+        description: pair.Description ?? undefined,
+      });
+    }
+
+    return {
+      protocol: perm.IpProtocol ?? "-1",
+      fromPort: perm.FromPort,
+      toPort: perm.ToPort,
+      ipRanges,
+      ipv6Ranges,
+      securityGroups,
+      description:
+        perm.IpRanges?.[0]?.Description ??
+        perm.Ipv6Ranges?.[0]?.Description ??
+        perm.UserIdGroupPairs?.[0]?.Description,
+    } satisfies SecurityGroupRule;
+  });
 }
 
 /**
@@ -451,26 +501,32 @@ export async function copySecurityGroup(params: {
 
         // IP範囲
         if (rule.ipRanges && rule.ipRanges.length > 0) {
-          ipPermission.IpRanges = rule.ipRanges.map((ip) => ({
-            CidrIp: ip,
-            Description: rule.description,
-          }));
+          ipPermission.IpRanges = rule.ipRanges
+            .filter((ip) => ip.cidr)
+            .map((ip) => ({
+              CidrIp: ip.cidr,
+              Description: ip.description ?? rule.description,
+            }));
         }
 
         // IPv6範囲
         if (rule.ipv6Ranges && rule.ipv6Ranges.length > 0) {
-          ipPermission.Ipv6Ranges = rule.ipv6Ranges.map((ip) => ({
-            CidrIpv6: ip,
-            Description: rule.description,
-          }));
+          ipPermission.Ipv6Ranges = rule.ipv6Ranges
+            .filter((ip) => ip.cidr)
+            .map((ip) => ({
+              CidrIpv6: ip.cidr,
+              Description: ip.description ?? rule.description,
+            }));
         }
 
         // セキュリティグループ
         if (rule.securityGroups && rule.securityGroups.length > 0) {
-          ipPermission.UserIdGroupPairs = rule.securityGroups.map((sg) => ({
-            GroupId: sg,
-            Description: rule.description,
-          }));
+          ipPermission.UserIdGroupPairs = rule.securityGroups
+            .filter((sg) => sg.groupId)
+            .map((sg) => ({
+              GroupId: sg.groupId,
+              Description: sg.description ?? rule.description,
+            }));
         }
 
         const command = new AuthorizeSecurityGroupIngressCommand({
@@ -522,26 +578,32 @@ export async function copySecurityGroup(params: {
 
         // IP範囲
         if (rule.ipRanges && rule.ipRanges.length > 0) {
-          ipPermission.IpRanges = rule.ipRanges.map((ip) => ({
-            CidrIp: ip,
-            Description: rule.description,
-          }));
+          ipPermission.IpRanges = rule.ipRanges
+            .filter((ip) => ip.cidr)
+            .map((ip) => ({
+              CidrIp: ip.cidr,
+              Description: ip.description ?? rule.description,
+            }));
         }
 
         // IPv6範囲
         if (rule.ipv6Ranges && rule.ipv6Ranges.length > 0) {
-          ipPermission.Ipv6Ranges = rule.ipv6Ranges.map((ip) => ({
-            CidrIpv6: ip,
-            Description: rule.description,
-          }));
+          ipPermission.Ipv6Ranges = rule.ipv6Ranges
+            .filter((ip) => ip.cidr)
+            .map((ip) => ({
+              CidrIpv6: ip.cidr,
+              Description: ip.description ?? rule.description,
+            }));
         }
 
         // セキュリティグループ
         if (rule.securityGroups && rule.securityGroups.length > 0) {
-          ipPermission.UserIdGroupPairs = rule.securityGroups.map((sg) => ({
-            GroupId: sg,
-            Description: rule.description,
-          }));
+          ipPermission.UserIdGroupPairs = rule.securityGroups
+            .filter((sg) => sg.groupId)
+            .map((sg) => ({
+              GroupId: sg.groupId,
+              Description: sg.description ?? rule.description,
+            }));
         }
 
         const command = new AuthorizeSecurityGroupEgressCommand({

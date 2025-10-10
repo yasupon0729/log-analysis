@@ -16,8 +16,12 @@ export function computeSecurityGroupWarnings(
   const warnings: SecurityGroupWarning[] = [];
 
   for (const rule of securityGroup.inboundRules) {
-    const hasPublicIpv4 = rule.ipRanges?.some((range) => range === "0.0.0.0/0");
-    const hasPublicIpv6 = rule.ipv6Ranges?.some((range) => range === "::/0");
+    const hasPublicIpv4 = rule.ipRanges?.some(
+      (range) => range.cidr === "0.0.0.0/0",
+    );
+    const hasPublicIpv6 = rule.ipv6Ranges?.some(
+      (range) => range.cidr === "::/0",
+    );
 
     if (!hasPublicIpv4 && !hasPublicIpv6) {
       continue;

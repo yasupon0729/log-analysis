@@ -73,3 +73,58 @@ export const securityGroupDetailTagListRecipe = cva({
 export const securityGroupDetailTagChipRecipe = cva({
   base: securityGroupDetailStyles.tagChip,
 });
+
+export const securityGroupDetailFormContainerRecipe = cva({
+  base: securityGroupDetailStyles.formContainer,
+});
+
+export const securityGroupDetailFormGridRecipe = cva({
+  base: securityGroupDetailStyles.formGrid,
+});
+
+export const securityGroupDetailFormFieldRecipe = cva({
+  base: securityGroupDetailStyles.formField,
+  variants: {
+    span: {
+      full: securityGroupDetailStyles.formFieldFull,
+    },
+  },
+});
+
+export const securityGroupDetailFormLabelRecipe = cva({
+  base: securityGroupDetailStyles.formLabel,
+});
+
+export const securityGroupDetailFormInputRecipe = cva({
+  base: securityGroupDetailStyles.formInput,
+});
+
+export const securityGroupDetailFormActionsRecipe = cva({
+  base: securityGroupDetailStyles.formActions,
+});
+
+export const securityGroupDetailFormMessageRecipe = cva({
+  base: securityGroupDetailStyles.formMessage,
+  variants: {
+    tone: {
+      error: securityGroupDetailStyles.formMessageError,
+      success: securityGroupDetailStyles.formMessageSuccess,
+    },
+  },
+});
+
+export const securityGroupDetailFormHelperRecipe = cva({
+  base: securityGroupDetailStyles.formHelper,
+});
+
+export const securityGroupDetailFormHelperRowRecipe = cva({
+  base: securityGroupDetailStyles.formHelperRow,
+});
+
+export const securityGroupDetailFormCheckboxLabelRecipe = cva({
+  base: securityGroupDetailStyles.formCheckboxLabel,
+});
+
+export const securityGroupDetailFormHelperButtonRecipe = cva({
+  base: securityGroupDetailStyles.formHelperButton,
+});
