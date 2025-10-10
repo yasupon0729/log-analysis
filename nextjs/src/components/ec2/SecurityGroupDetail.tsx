@@ -1,10 +1,10 @@
 "use client";
 
 import {
-  type Table,
   createColumnHelper,
   flexRender,
   getCoreRowModel,
+  type Table,
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
