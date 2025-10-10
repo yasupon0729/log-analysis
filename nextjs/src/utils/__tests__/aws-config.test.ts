@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { RETRY_CONFIG, getDefaultAWSConfig } from "../aws-config";
+import { getDefaultAWSConfig, RETRY_CONFIG } from "../aws-config";
 
 describe("AWS Config", () => {
   let originalEnv: NodeJS.ProcessEnv;

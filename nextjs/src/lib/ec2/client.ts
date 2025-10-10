@@ -2,8 +2,8 @@
  * EC2クライアントの設定と初期化
  */
 
-import { RETRY_CONFIG, getDefaultAWSConfig } from "@/utils";
 import { EC2Client, type EC2ClientConfig } from "@aws-sdk/client-ec2";
+import { getDefaultAWSConfig, RETRY_CONFIG } from "@/utils";
 import { logger } from "../logger";
 
 // s

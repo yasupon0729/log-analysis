@@ -83,7 +83,10 @@ export async function GET(request: NextRequest) {
 
     const endDateValue = endDateParam || startDateValue;
 
-    if (!isValidDateString(startDateValue) || !isValidDateString(endDateValue)) {
+    if (
+      !isValidDateString(startDateValue) ||
+      !isValidDateString(endDateValue)
+    ) {
       return NextResponse.json<S3LogResponse>(
         { ok: false, error: "日付の形式が不正です (YYYY-MM-DD)" },
         { status: 400 },
@@ -108,7 +111,8 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    const aggregatedObjects: Array<{ summary: S3ObjectSummary; date: string }> = [];
+    const aggregatedObjects: Array<{ summary: S3ObjectSummary; date: string }> =
+      [];
     const fetchedDates = new Set<string>();
     const missingDates: string[] = [];
 
@@ -130,10 +134,12 @@ export async function GET(request: NextRequest) {
       }
 
       fetchedDates.add(date);
-      const sorted = objects.slice().sort((a, b) => a.fullKey.localeCompare(b.fullKey));
-      sorted.forEach((summary) => {
+      const sorted = objects
+        .slice()
+        .sort((a, b) => a.fullKey.localeCompare(b.fullKey));
+      for (const summary of sorted) {
         aggregatedObjects.push({ summary, date });
-      });
+      }
     }
 
     if (aggregatedObjects.length === 0) {
@@ -179,7 +185,7 @@ export async function GET(request: NextRequest) {
       totalLogSize += decoded.logSize;
       anyDecompress ||= decoded.didDecompress;
 
-      decoded.entries.forEach((entry) => {
+      for (const entry of decoded.entries) {
         sources.push({
           name: entry.name,
           fileType: entry.fileType,
@@ -188,7 +194,7 @@ export async function GET(request: NextRequest) {
           logSize: entry.logSize,
           didDecompress: entry.didDecompress,
         });
-      });
+      }
     }
 
     if (parts.length === 0) {

@@ -4,6 +4,28 @@
 # 修正・作成したファイルに関しては、実行後、必ずerrorがないことを確認しなさい。
 # cssは必ず、レシピとして別ファイル定義してください。(オーバライドのみ許可)
 
+## 開発ルール
+
+### TypeScript
+- `any`型を使用する際は、必ず以下のBiome ignoreコメントを付ける:
+  ```typescript
+  // biome-ignore lint/suspicious/noExplicitAny: 理由を記載
+  ```
+- "修正後は、必ず 以下のコードを実行する
+```
+bun run lint
+bun run format`
+```
+
+### コンポーネント開発
+- コンポーネントは小さく、単一責任の原則に従って作成する
+- 既存のコンポーネントを必ず確認し、再利用可能な場合は新規作成せず既存を使用する
+- 例: Button, Input, Card等の基本コンポーネントが既に存在する場合は、それらを優先的に使用
+
+### アクセシビリティ
+- クリック可能な要素には適切なキーボードイベントを実装する
+- 配列のmapでkeyを設定する際は、indexではなく一意のIDを使用する
+
 ## Project Overview
 Next.js-based log analysis dashboard with S3 integration capabilities, built with modern React patterns and zero-runtime CSS.
 
@@ -13,7 +35,8 @@ Next.js-based log analysis dashboard with S3 integration capabilities, built wit
 - **Runtime**: Bun (latest)
 - **Framework**: Next.js 15 with App Router
 - **Language**: TypeScript 5
-- **Styling**: Panda CSS (zero-runtime CSS-in-JS)
+- **Styling**: Panda CSS (zero-runtime CSS-in-JS) - ダーク＋ブルー基調
+- **Logging**: Pino wrapper (サーバー／ブラウザ双方対応)
 - **Linting/Formatting**: Biome
 
 ### Architecture
@@ -126,12 +149,13 @@ bun typecheck    # TypeScript checking
 ✅ **Completed**
 - Workspace setup for monorepo
 - Next.js 15 with App Router
-- Panda CSS with dark theme
-- Recipe-based CSS architecture
+- Panda CSS with dark theme (ダーク＋ブルー基調)
+- Recipe-based CSS architecture (インラインCSS禁止)
 - Sidebar navigation component
 - TypeScript configuration
 - Debugging setup
 - All TypeScript errors resolved
+- Pinoラッパーによるロギング実装（サーバー／ブラウザ双方対応）
 
 ⏳ **Pending**
 - AWS S3 integration
@@ -145,9 +169,10 @@ bun typecheck    # TypeScript checking
 
 ### CSS Architecture
 - **Separation**: Styles defined in recipe files, not inline
-- **Recipes**: Variants and base styles in `.recipe.ts` files
+- **Recipes**: Variants and base styles in `.recipe.ts` files - 必須、インラインCSS禁止（オーバライドのみ許可）
 - **Utilities**: Reusable style functions in `/styles/utils`
 - **Tokens**: Semantic color tokens for consistency
+- **Theme**: ダーク＋ブルー基調のデザインシステム
 
 ### WebKit Properties
 - Use style prop for WebKit-specific CSS properties
