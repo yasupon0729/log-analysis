@@ -1,4 +1,4 @@
-// 環境に応じて適切なloggerをエクスポート
+// 環境に応じて適切なloggerをエクスポート。
 export const logger =
   typeof window === "undefined"
     ? require("./server").logger

@@ -36,3 +36,4 @@ yarn-error.log*
 next-env.d.ts
 
 /nextjs/logs/*
+logs/server/app-prod.log

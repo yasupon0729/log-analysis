@@ -41,6 +41,11 @@ export class LoggerWrapper {
     this.logger.debug(this.formatLog(message, metadata));
   }
 
+  success(message: string, metadata?: LogMetadata) {
+    // successはpinoにはないので、infoレベルで出力
+    this.logger.info(this.formatLog(message, { ...metadata, type: 'success' }));
+  }
+
   fatal(message: string, metadata?: LogMetadata) {
     this.logger.fatal(this.formatLog(message, metadata));
   }
