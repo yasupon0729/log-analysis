@@ -1,0 +1,107 @@
+export const securityGroupDetailStyles = {
+  container: {
+    padding: "2rem",
+    maxWidth: "1200px",
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: "2rem",
+  },
+  header: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+  },
+  backLink: {
+    width: "fit-content",
+  },
+  title: {
+    fontSize: "2.25rem",
+    fontWeight: "700",
+    color: "primary.300",
+  },
+  subtitle: {
+    fontSize: "1rem",
+    color: "text.secondary",
+    fontFamily: "monospace",
+  },
+  metaList: {
+    display: "flex",
+    gap: "0.75rem",
+    flexWrap: "wrap",
+    fontSize: "0.95rem",
+    color: "text.secondary",
+  },
+  metaItem: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.35rem",
+    padding: "0.35rem 0.6rem",
+    backgroundColor: "rgba(59, 130, 246, 0.08)",
+    borderRadius: "999px",
+    fontFamily: "monospace",
+  },
+  description: {
+    color: "text.primary",
+    lineHeight: "1.7",
+    fontSize: "1rem",
+  },
+  infoGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: "1rem",
+  },
+  infoCard: {
+    padding: "1rem",
+    backgroundColor: "surface",
+    borderRadius: "0.75rem",
+    border: "1px solid",
+    borderColor: "border",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.35rem",
+  },
+  infoLabel: {
+    fontSize: "0.85rem",
+    color: "text.secondary",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  },
+  infoValue: {
+    fontSize: "1.35rem",
+    fontWeight: "600",
+    color: "primary.300",
+  },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1.5rem",
+  },
+  sectionHeader: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.5rem",
+  },
+  sectionTitle: {
+    fontSize: "1.5rem",
+    fontWeight: "600",
+    color: "text.primary",
+  },
+  sectionSubtitle: {
+    fontSize: "0.95rem",
+    color: "text.secondary",
+  },
+  tagList: {
+    display: "flex",
+    gap: "0.5rem",
+    flexWrap: "wrap",
+  },
+  tagChip: {
+    padding: "0.3rem 0.6rem",
+    backgroundColor: "rgba(147, 197, 253, 0.15)",
+    borderRadius: "0.5rem",
+    fontSize: "0.8rem",
+    color: "primary.200",
+    fontFamily: "monospace",
+  },
+} as const;

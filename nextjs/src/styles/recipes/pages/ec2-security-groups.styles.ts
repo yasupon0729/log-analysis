@@ -11,7 +11,7 @@ export const securityGroupsStyles = {
     marginBottom: "2rem",
   },
   title: {
-    fontSize: "2rem",
+    fontSize: "2.25rem",
     fontWeight: "bold",
     color: "primary.400",
   },
@@ -23,6 +23,8 @@ export const securityGroupsStyles = {
     backgroundColor: "surface",
     borderRadius: "0.5rem",
     flexWrap: "wrap",
+    border: "1px solid",
+    borderColor: "border",
   },
   filterGroup: {
     display: "flex",
@@ -40,7 +42,7 @@ export const securityGroupsStyles = {
     borderColor: "border",
     backgroundColor: "background",
     color: "text.primary",
-    minWidth: "200px",
+    minWidth: "220px",
   },
   select: {
     padding: "0.5rem",
@@ -49,7 +51,7 @@ export const securityGroupsStyles = {
     borderColor: "border",
     backgroundColor: "background",
     color: "text.primary",
-    minWidth: "150px",
+    minWidth: "180px",
   },
   checkboxLabel: {
     display: "flex",
@@ -62,10 +64,97 @@ export const securityGroupsStyles = {
     height: "1rem",
     cursor: "pointer",
   },
-  cardsContainer: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(500px, 1fr))",
-    gap: "1.5rem",
+  tableContainer: {
+    overflowX: "auto",
+    borderRadius: "0.75rem",
+    border: "1px solid",
+    borderColor: "border",
+    backgroundColor: "surface",
+  },
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "960px",
+  },
+  tableHeaderRow: {
+    backgroundColor: "rgba(59, 130, 246, 0.1)",
+  },
+  tableHeaderCell: {
+    textAlign: "left",
+    fontSize: "0.875rem",
+    fontWeight: "600",
+    letterSpacing: "0.05em",
+    textTransform: "uppercase",
+    color: "text.secondary",
+    padding: "0.75rem 1rem",
+    borderBottom: "1px solid",
+    borderColor: "border",
+  },
+  tableBodyRow: {
+    transition: "background-color 0.2s",
+    borderBottom: "1px solid",
+    borderColor: "rgba(255, 255, 255, 0.05)",
+  },
+  tableBodyRowClickable: {
+    cursor: "pointer",
+    "&:hover": {
+      backgroundColor: "rgba(59, 130, 246, 0.08)",
+    },
+  },
+  tableCell: {
+    padding: "1rem",
+    verticalAlign: "top",
+    fontSize: "0.95rem",
+    color: "text.primary",
+  },
+  tableNameCell: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.35rem",
+  },
+  tableNameTitle: {
+    fontSize: "1rem",
+    fontWeight: "600",
+    color: "primary.300",
+  },
+  tableNameMeta: {
+    display: "flex",
+    gap: "0.5rem",
+    flexWrap: "wrap",
+    fontSize: "0.8rem",
+    color: "text.secondary",
+  },
+  tableDescription: {
+    color: "text.secondary",
+    lineHeight: "1.5",
+  },
+  tableCounts: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+    fontFamily: "monospace",
+  },
+  warningList: {
+    display: "flex",
+    gap: "0.5rem",
+    flexWrap: "wrap",
+  },
+  warningChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "0.25rem",
+    padding: "0.25rem 0.5rem",
+    borderRadius: "999px",
+    fontSize: "0.75rem",
+    fontWeight: "600",
+  },
+  warningChipCritical: {
+    backgroundColor: "error",
+    color: "white",
+  },
+  warningChipWarning: {
+    backgroundColor: "warning",
+    color: "black",
   },
   loadingContainer: {
     display: "flex",
@@ -96,6 +185,7 @@ export const securityGroupsStyles = {
   noResults: {
     textAlign: "center",
     color: "text.secondary",
-    padding: "2rem",
+    padding: "2.5rem",
+    fontSize: "0.95rem",
   },
 } as const;

@@ -39,3 +39,9 @@ build-no-cache:
 # キャッシュを使わずにビルドしてからバックグラウンドで起動
 build-no-cache-up:
 	$(DOCKER_COMPOSE) up --build --no-cache -d
+
+ps:
+	$(DOCKER_COMPOSE) ps
+
+logs:
+	$(DOCKER_COMPOSE) logs -f

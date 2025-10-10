@@ -42,8 +42,71 @@ export const securityGroupsCheckboxRecipe = cva({
   base: securityGroupsStyles.checkbox,
 });
 
-export const securityGroupsCardsContainerRecipe = cva({
-  base: securityGroupsStyles.cardsContainer,
+export const securityGroupsTableContainerRecipe = cva({
+  base: securityGroupsStyles.tableContainer,
+});
+
+export const securityGroupsTableRecipe = cva({
+  base: securityGroupsStyles.table,
+});
+
+export const securityGroupsTableHeaderRowRecipe = cva({
+  base: securityGroupsStyles.tableHeaderRow,
+});
+
+export const securityGroupsTableHeaderCellRecipe = cva({
+  base: securityGroupsStyles.tableHeaderCell,
+});
+
+export const securityGroupsTableRowRecipe = cva({
+  base: securityGroupsStyles.tableBodyRow,
+  variants: {
+    clickable: {
+      true: securityGroupsStyles.tableBodyRowClickable,
+      false: {},
+    },
+  },
+  defaultVariants: {
+    clickable: true,
+  },
+});
+
+export const securityGroupsTableCellRecipe = cva({
+  base: securityGroupsStyles.tableCell,
+});
+
+export const securityGroupsTableNameCellRecipe = cva({
+  base: securityGroupsStyles.tableNameCell,
+});
+
+export const securityGroupsTableNameTitleRecipe = cva({
+  base: securityGroupsStyles.tableNameTitle,
+});
+
+export const securityGroupsTableNameMetaRecipe = cva({
+  base: securityGroupsStyles.tableNameMeta,
+});
+
+export const securityGroupsTableDescriptionRecipe = cva({
+  base: securityGroupsStyles.tableDescription,
+});
+
+export const securityGroupsTableCountsRecipe = cva({
+  base: securityGroupsStyles.tableCounts,
+});
+
+export const securityGroupsWarningListRecipe = cva({
+  base: securityGroupsStyles.warningList,
+});
+
+export const securityGroupsWarningChipRecipe = cva({
+  base: securityGroupsStyles.warningChip,
+  variants: {
+    level: {
+      critical: securityGroupsStyles.warningChipCritical,
+      warning: securityGroupsStyles.warningChipWarning,
+    },
+  },
 });
 
 export const securityGroupsLoadingContainerRecipe = cva({

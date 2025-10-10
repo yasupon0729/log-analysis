@@ -1,13 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
+import {
+  createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
-import { SecurityGroupCard } from "@/components/ec2/SecurityGroupCard";
 import { SecurityGroupStats } from "@/components/ec2/SecurityGroupStats";
 import { Button } from "@/components/ui/Button";
-import type { SecurityGroupInfo } from "@/lib/ec2/security-groups";
+import type {
+  SecurityGroupWarning,
+  SecurityGroupWithWarnings,
+} from "@/lib/ec2/security-group-warnings";
 import {
-  securityGroupsCardsContainerRecipe,
   securityGroupsCheckboxLabelRecipe,
   securityGroupsCheckboxRecipe,
   securityGroupsContainerRecipe,
@@ -21,17 +29,21 @@ import {
   securityGroupsNoResultsRecipe,
   securityGroupsSelectRecipe,
   securityGroupsSpinnerRecipe,
+  securityGroupsTableCellRecipe,
+  securityGroupsTableContainerRecipe,
+  securityGroupsTableCountsRecipe,
+  securityGroupsTableDescriptionRecipe,
+  securityGroupsTableHeaderCellRecipe,
+  securityGroupsTableHeaderRowRecipe,
+  securityGroupsTableNameCellRecipe,
+  securityGroupsTableNameMetaRecipe,
+  securityGroupsTableNameTitleRecipe,
+  securityGroupsTableRecipe,
+  securityGroupsTableRowRecipe,
   securityGroupsTitleRecipe,
+  securityGroupsWarningChipRecipe,
+  securityGroupsWarningListRecipe,
 } from "@/styles/recipes/pages/ec2-security-groups.recipe";
-
-interface SecurityGroupWithWarnings extends SecurityGroupInfo {
-  warnings: Array<{
-    level: "critical" | "warning";
-    message: string;
-    // biome-ignore lint/suspicious/noExplicitAny: EC2 rule type is complex and varies by protocol
-    rule: any;
-  }>;
-}
 
 interface SecurityGroupsData {
   securityGroups: SecurityGroupWithWarnings[];
@@ -42,9 +54,13 @@ interface SecurityGroupsData {
   };
 }
 
+const columnHelper = createColumnHelper<SecurityGroupWithWarnings>();
+
 export default function SecurityGroupsPage() {
   const searchInputId = useId();
   const vpcSelectId = useId();
+  const router = useRouter();
+
   const [data, setData] = useState<SecurityGroupsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,12 +76,13 @@ export default function SecurityGroupsPage() {
 
       if (result.success) {
         setData(result.data);
+        setError(null);
       } else {
-        setError(result.error);
+        setError(result.error ?? "Failed to fetch security groups");
       }
     } catch (err) {
-      setError("Failed to fetch security groups");
       console.error(err);
+      setError("Failed to fetch security groups");
     } finally {
       setLoading(false);
     }
@@ -75,22 +92,85 @@ export default function SecurityGroupsPage() {
     fetchSecurityGroups();
   }, [fetchSecurityGroups]);
 
-  // VPCの一覧を取得
-  const vpcList = data
-    ? [...new Set(data.securityGroups.map((sg) => sg.vpcId || "EC2-Classic"))]
-    : [];
+  const vpcList = useMemo(() => {
+    if (!data) {
+      return [] as string[];
+    }
 
-  // フィルタリング
-  const filteredGroups =
-    data?.securityGroups.filter((sg) => {
-      const matchesVpc =
-        selectedVpc === "all" || (sg.vpcId || "EC2-Classic") === selectedVpc;
-      const matchesSearch =
-        sg.groupName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        sg.groupId.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesWarnings = !showOnlyWarnings || sg.warnings.length > 0;
-      return matchesVpc && matchesSearch && matchesWarnings;
-    }) || [];
+    const allVpcs = data.securityGroups.map(
+      (group) => group.vpcId || "EC2-Classic",
+    );
+    return Array.from(new Set(allVpcs));
+  }, [data]);
+
+  const filteredGroups = useMemo(() => {
+    if (!data) {
+      return [] as SecurityGroupWithWarnings[];
+    }
+
+    const lowerSearch = searchTerm.toLowerCase();
+    return data.securityGroups.filter((group) => {
+      const vpcMatches =
+        selectedVpc === "all" || (group.vpcId || "EC2-Classic") === selectedVpc;
+      const searchMatches =
+        group.groupName.toLowerCase().includes(lowerSearch) ||
+        group.groupId.toLowerCase().includes(lowerSearch) ||
+        group.description.toLowerCase().includes(lowerSearch);
+      const warningsMatch = !showOnlyWarnings || group.warnings.length > 0;
+
+      return vpcMatches && searchMatches && warningsMatch;
+    });
+  }, [data, searchTerm, selectedVpc, showOnlyWarnings]);
+
+  const columns = useMemo(
+    () => [
+      columnHelper.accessor("groupName", {
+        header: "Security Group",
+        cell: ({ row, getValue }) => (
+          <div className={securityGroupsTableNameCellRecipe()}>
+            <span className={securityGroupsTableNameTitleRecipe()}>
+              {getValue()}
+            </span>
+            <span className={securityGroupsTableNameMetaRecipe()}>
+              <span>{row.original.groupId}</span>
+              <span>{row.original.vpcId || "EC2-Classic"}</span>
+            </span>
+          </div>
+        ),
+      }),
+      columnHelper.display({
+        id: "description",
+        header: "Description",
+        cell: ({ row }) => (
+          <p className={securityGroupsTableDescriptionRecipe()}>
+            {row.original.description || "—"}
+          </p>
+        ),
+      }),
+      columnHelper.display({
+        id: "rules",
+        header: "Rules",
+        cell: ({ row }) => (
+          <div className={securityGroupsTableCountsRecipe()}>
+            <span>Inbound: {row.original.inboundRules.length}</span>
+            <span>Outbound: {row.original.outboundRules.length}</span>
+          </div>
+        ),
+      }),
+      columnHelper.display({
+        id: "warnings",
+        header: "Warnings",
+        cell: ({ row }) => renderWarningSummary(row.original.warnings),
+      }),
+    ],
+    [],
+  );
+
+  const table = useReactTable<SecurityGroupWithWarnings>({
+    data: filteredGroups,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   if (loading) {
     return (
@@ -113,6 +193,10 @@ export default function SecurityGroupsPage() {
     );
   }
 
+  if (!data) {
+    return null;
+  }
+
   return (
     <div className={securityGroupsContainerRecipe()}>
       <header className={securityGroupsHeaderRecipe()}>
@@ -122,7 +206,7 @@ export default function SecurityGroupsPage() {
         </Button>
       </header>
 
-      {data && <SecurityGroupStats statistics={data.statistics} />}
+      <SecurityGroupStats statistics={data.statistics} />
 
       <div className={securityGroupsFiltersRecipe()}>
         <div className={securityGroupsFilterGroupRecipe()}>
@@ -135,9 +219,9 @@ export default function SecurityGroupsPage() {
           <input
             id={searchInputId}
             type="text"
-            placeholder="Search by name or ID..."
+            placeholder="Search by name, ID, or description..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(event) => setSearchTerm(event.target.value)}
             className={securityGroupsInputRecipe()}
           />
         </div>
@@ -149,7 +233,7 @@ export default function SecurityGroupsPage() {
           <select
             id={vpcSelectId}
             value={selectedVpc}
-            onChange={(e) => setSelectedVpc(e.target.value)}
+            onChange={(event) => setSelectedVpc(event.target.value)}
             className={securityGroupsSelectRecipe()}
           >
             <option value="all">All VPCs</option>
@@ -166,7 +250,7 @@ export default function SecurityGroupsPage() {
             <input
               type="checkbox"
               checked={showOnlyWarnings}
-              onChange={(e) => setShowOnlyWarnings(e.target.checked)}
+              onChange={(event) => setShowOnlyWarnings(event.target.checked)}
               className={securityGroupsCheckboxRecipe()}
             />
             Show only groups with warnings
@@ -174,17 +258,100 @@ export default function SecurityGroupsPage() {
         </div>
       </div>
 
-      <div className={securityGroupsCardsContainerRecipe()}>
-        {filteredGroups.length === 0 ? (
-          <p className={securityGroupsNoResultsRecipe()}>
-            No security groups found matching your criteria
-          </p>
-        ) : (
-          filteredGroups.map((sg) => (
-            <SecurityGroupCard key={sg.groupId} securityGroup={sg} />
-          ))
-        )}
-      </div>
+      {filteredGroups.length === 0 ? (
+        <p className={securityGroupsNoResultsRecipe()}>
+          No security groups found matching your criteria.
+        </p>
+      ) : (
+        <div className={securityGroupsTableContainerRecipe()}>
+          <table className={securityGroupsTableRecipe()}>
+            <thead>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr
+                  key={headerGroup.id}
+                  className={securityGroupsTableHeaderRowRecipe()}
+                >
+                  {headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className={securityGroupsTableHeaderCellRecipe()}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.map((row) => (
+                <tr
+                  key={row.id}
+                  tabIndex={0}
+                  className={securityGroupsTableRowRecipe({ clickable: true })}
+                  onClick={() =>
+                    router.push(`/ec2/security-groups/${row.original.groupId}`)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(
+                        `/ec2/security-groups/${row.original.groupId}`,
+                      );
+                    }
+                  }}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td
+                      key={cell.id}
+                      className={securityGroupsTableCellRecipe()}
+                    >
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext(),
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderWarningSummary(warnings: SecurityGroupWarning[]) {
+  if (warnings.length === 0) {
+    return <span>—</span>;
+  }
+
+  const criticalCount = warnings.filter(
+    (warning) => warning.level === "critical",
+  ).length;
+  const warningCount = warnings.filter(
+    (warning) => warning.level === "warning",
+  ).length;
+
+  return (
+    <div className={securityGroupsWarningListRecipe()}>
+      {criticalCount > 0 && (
+        <span
+          className={securityGroupsWarningChipRecipe({ level: "critical" })}
+        >
+          ⚠️ {criticalCount} Critical
+        </span>
+      )}
+      {warningCount > 0 && (
+        <span className={securityGroupsWarningChipRecipe({ level: "warning" })}>
+          ⚠️ {warningCount} Warning
+        </span>
+      )}
     </div>
   );
 }
