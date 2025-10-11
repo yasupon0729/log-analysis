@@ -58,6 +58,14 @@ export const securityGroupsTableHeaderCellRecipe = cva({
   base: securityGroupsStyles.tableHeaderCell,
 });
 
+export const securityGroupsTableHeaderSortButtonRecipe = cva({
+  base: securityGroupsStyles.tableHeaderSortButton,
+});
+
+export const securityGroupsTableHeaderSortIconRecipe = cva({
+  base: securityGroupsStyles.tableHeaderSortIcon,
+});
+
 export const securityGroupsTableRowRecipe = cva({
   base: securityGroupsStyles.tableBodyRow,
   variants: {

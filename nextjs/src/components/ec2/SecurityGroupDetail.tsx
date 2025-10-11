@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  type SortingState,
+  type Table,
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  type Table,
+  getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
@@ -56,6 +58,8 @@ import {
   securityGroupsTableDescriptionRecipe,
   securityGroupsTableHeaderCellRecipe,
   securityGroupsTableHeaderRowRecipe,
+  securityGroupsTableHeaderSortButtonRecipe,
+  securityGroupsTableHeaderSortIconRecipe,
   securityGroupsTableRecipe,
   securityGroupsTableRowRecipe,
   securityGroupsWarningChipRecipe,
@@ -77,6 +81,16 @@ interface RuleTableRow {
 }
 
 const ruleColumnHelper = createColumnHelper<RuleTableRow>();
+
+function getSortIndicator(direction: false | "asc" | "desc") {
+  if (direction === "asc") {
+    return "▲";
+  }
+  if (direction === "desc") {
+    return "▼";
+  }
+  return "⇅";
+}
 
 export function SecurityGroupDetail({ group }: Props) {
   const router = useRouter();
@@ -117,16 +131,29 @@ export function SecurityGroupDetail({ group }: Props) {
   const append32Id = `${idBase}-append-32`;
   const append32InfoId = `${idBase}-append-32-info`;
 
+  const [inboundSorting, setInboundSorting] = useState<SortingState>([]);
+  const [outboundSorting, setOutboundSorting] = useState<SortingState>([]);
+
   const inboundTable = useReactTable<RuleTableRow>({
     data: inboundRows,
     columns: inboundColumns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: {
+      sorting: inboundSorting,
+    },
+    onSortingChange: setInboundSorting,
   });
 
   const outboundTable = useReactTable<RuleTableRow>({
     data: outboundRows,
     columns: outboundColumns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: {
+      sorting: outboundSorting,
+    },
+    onSortingChange: setOutboundSorting,
   });
 
   const criticalCount = group.warnings.filter(
@@ -656,12 +683,29 @@ function renderRulesTable(table: Table<RuleTableRow>, emptyMessage: string) {
                   key={header.id}
                   className={securityGroupsTableHeaderCellRecipe()}
                 >
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(
+                  {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                    <button
+                      type="button"
+                      onClick={header.column.getToggleSortingHandler()}
+                      className={securityGroupsTableHeaderSortButtonRecipe()}
+                    >
+                      {flexRender(
                         header.column.columnDef.header,
                         header.getContext(),
                       )}
+                      <span
+                        className={securityGroupsTableHeaderSortIconRecipe()}
+                        aria-hidden="true"
+                      >
+                        {getSortIndicator(header.column.getIsSorted())}
+                      </span>
+                    </button>
+                  ) : (
+                    flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )
+                  )}
                 </th>
               ))}
             </tr>
@@ -690,21 +734,28 @@ function createRuleColumns(targetLabel: string) {
   return [
     ruleColumnHelper.accessor("name", {
       header: "Name",
+      sortingFn: "alphanumeric",
     }),
     ruleColumnHelper.accessor("ipVersion", {
       header: "IP Version",
+      sortingFn: "alphanumeric",
     }),
     ruleColumnHelper.accessor("type", {
       header: "Type",
+      sortingFn: "alphanumeric",
     }),
     ruleColumnHelper.accessor("protocol", {
       header: "Protocol",
+      sortingFn: "alphanumeric",
     }),
     ruleColumnHelper.accessor("portRange", {
       header: "Port Range",
+      enableSorting: true,
+      sortingFn: "alphanumeric",
     }),
     ruleColumnHelper.accessor("source", {
       header: targetLabel,
+      sortingFn: "alphanumeric",
       cell: (info) => (
         <span className={securityGroupsTableDescriptionRecipe()}>
           {info.getValue()}
@@ -712,7 +763,7 @@ function createRuleColumns(targetLabel: string) {
       ),
     }),
     ruleColumnHelper.accessor("description", {
-      header: "Description(複数は、半角の「,」区切りで入力)",
+      header: "Description",
       cell: (info) => (
         <span className={securityGroupsTableDescriptionRecipe()}>
           {info.getValue() || "—"}

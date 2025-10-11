@@ -99,6 +99,25 @@ export const securityGroupsStyles = {
     borderBottom: "1px solid",
     borderColor: "border",
   },
+  tableHeaderSortButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
+    background: "transparent",
+    border: "none",
+    color: "inherit",
+    font: "inherit",
+    cursor: "pointer",
+    padding: 0,
+    textTransform: "inherit",
+    _hover: {
+      color: "text.primary",
+    },
+  },
+  tableHeaderSortIcon: {
+    fontSize: "0.75rem",
+    opacity: 0.7,
+  },
   tableBodyRow: {
     transition: "background-color 0.2s",
     borderBottom: "1px solid",

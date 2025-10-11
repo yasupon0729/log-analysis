@@ -1,9 +1,11 @@
 "use client";
 
 import {
+  type SortingState,
   createColumnHelper,
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
@@ -36,6 +38,8 @@ import {
   securityGroupsTableDescriptionRecipe,
   securityGroupsTableHeaderCellRecipe,
   securityGroupsTableHeaderRowRecipe,
+  securityGroupsTableHeaderSortButtonRecipe,
+  securityGroupsTableHeaderSortIconRecipe,
   securityGroupsTableNameCellRecipe,
   securityGroupsTableNameMetaRecipe,
   securityGroupsTableNameTitleRecipe,
@@ -56,6 +60,16 @@ interface SecurityGroupsData {
 }
 
 const columnHelper = createColumnHelper<SecurityGroupWithWarnings>();
+
+function getSortIndicator(direction: false | "asc" | "desc") {
+  if (direction === "asc") {
+    return "▲";
+  }
+  if (direction === "desc") {
+    return "▼";
+  }
+  return "⇅";
+}
 
 export default function SecurityGroupsPage() {
   const searchInputId = useId();
@@ -127,6 +141,7 @@ export default function SecurityGroupsPage() {
     () => [
       columnHelper.accessor("groupName", {
         header: "Security Group",
+        sortingFn: "alphanumeric",
         cell: ({ row, getValue }) => (
           <div className={securityGroupsTableNameCellRecipe()}>
             <span className={securityGroupsTableNameTitleRecipe()}>
@@ -142,6 +157,11 @@ export default function SecurityGroupsPage() {
       columnHelper.display({
         id: "description",
         header: "Description",
+        enableSorting: true,
+        sortingFn: (rowA, rowB) =>
+          (rowA.original.description ?? "").localeCompare(
+            rowB.original.description ?? "",
+          ),
         cell: ({ row }) => (
           <p className={securityGroupsTableDescriptionRecipe()}>
             {row.original.description || "—"}
@@ -151,6 +171,16 @@ export default function SecurityGroupsPage() {
       columnHelper.display({
         id: "rules",
         header: "Rules",
+        enableSorting: true,
+        sortingFn: (rowA, rowB) => {
+          const aTotal =
+            countFlattenedRules(rowA.original.inboundRules) +
+            countFlattenedRules(rowA.original.outboundRules);
+          const bTotal =
+            countFlattenedRules(rowB.original.inboundRules) +
+            countFlattenedRules(rowB.original.outboundRules);
+          return aTotal - bTotal;
+        },
         cell: ({ row }) => (
           <div className={securityGroupsTableCountsRecipe()}>
             <span>
@@ -165,16 +195,26 @@ export default function SecurityGroupsPage() {
       columnHelper.display({
         id: "warnings",
         header: "Warnings",
+        enableSorting: true,
+        sortingFn: (rowA, rowB) =>
+          rowA.original.warnings.length - rowB.original.warnings.length,
         cell: ({ row }) => renderWarningSummary(row.original.warnings),
       }),
     ],
     [],
   );
 
+  const [sorting, setSorting] = useState<SortingState>([]);
+
   const table = useReactTable<SecurityGroupWithWarnings>({
     data: filteredGroups,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    state: {
+      sorting,
+    },
+    onSortingChange: setSorting,
   });
 
   if (loading) {
@@ -281,12 +321,29 @@ export default function SecurityGroupsPage() {
                       key={header.id}
                       className={securityGroupsTableHeaderCellRecipe()}
                     >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
+                      {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className={securityGroupsTableHeaderSortButtonRecipe()}
+                        >
+                          {flexRender(
                             header.column.columnDef.header,
                             header.getContext(),
                           )}
+                          <span
+                            className={securityGroupsTableHeaderSortIconRecipe()}
+                            aria-hidden="true"
+                          >
+                            {getSortIndicator(header.column.getIsSorted())}
+                          </span>
+                        </button>
+                      ) : (
+                        flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )
+                      )}
                     </th>
                   ))}
                 </tr>
