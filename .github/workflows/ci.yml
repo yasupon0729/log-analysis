@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '20'
+  BUN_VERSION: 'latest'
+
+jobs:
+  # ビルドチェック
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+            nextjs/node_modules
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: |
+          bun install
+          cd nextjs && bun install
+
+      - name: Run Biome lint
+        run: bun run lint
+
+      - name: Check formatting
+        run: bunx @biomejs/biome format --check .
+
+      - name: TypeScript check
+        working-directory: ./nextjs
+        run: bunx tsc --noEmit
+
+      - name: Generate Panda CSS
+        working-directory: ./nextjs
+        run: bunx panda codegen
+
+      - name: Build Next.js application
+        working-directory: ./nextjs
+        run: bun run build
+
+      - name: Build success
+        if: success()
+        run: echo "✅ Build check passed successfully!"

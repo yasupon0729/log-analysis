@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # ルートワークスペースのnpm/bunパッケージ
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Next.jsアプリケーションのnpm/bunパッケージ
+  - package-ecosystem: "npm"
+    directory: "/nextjs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "nextjs"
+    commit-message:
+      prefix: "chore(nextjs)"
+      include: "scope"
+    groups:
+      # AWS SDKの依存関係をグループ化
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
+      # React関連の依存関係をグループ化
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+
+  # GitHub Actionsの自動更新
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
