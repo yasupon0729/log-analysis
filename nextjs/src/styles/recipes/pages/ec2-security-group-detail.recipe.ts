@@ -99,6 +99,10 @@ export const securityGroupDetailFormInputRecipe = cva({
   base: securityGroupDetailStyles.formInput,
 });
 
+export const securityGroupDetailFormSelectRecipe = cva({
+  base: securityGroupDetailStyles.formSelect,
+});
+
 export const securityGroupDetailFormActionsRecipe = cva({
   base: securityGroupDetailStyles.formActions,
 });

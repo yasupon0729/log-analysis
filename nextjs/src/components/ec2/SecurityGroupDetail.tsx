@@ -32,6 +32,7 @@ import {
   securityGroupDetailFormInputRecipe,
   securityGroupDetailFormLabelRecipe,
   securityGroupDetailFormMessageRecipe,
+  securityGroupDetailFormSelectRecipe,
   securityGroupDetailHeaderRecipe,
   securityGroupDetailInfoCardRecipe,
   securityGroupDetailInfoGridRecipe,
@@ -366,7 +367,7 @@ export function SecurityGroupDetail({ group }: Props) {
                     setToPort("443");
                   }
                 }}
-                className={securityGroupDetailFormInputRecipe()}
+                className={securityGroupDetailFormSelectRecipe()}
                 disabled={isPending}
               >
                 <option value="tcp">TCP</option>
@@ -441,7 +442,7 @@ export function SecurityGroupDetail({ group }: Props) {
                     setAppend32(true);
                   }
                 }}
-                className={securityGroupDetailFormInputRecipe()}
+                className={securityGroupDetailFormSelectRecipe()}
                 disabled={isPending}
               >
                 <option value="ipv4">IPv4</option>

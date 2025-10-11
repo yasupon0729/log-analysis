@@ -11,6 +11,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { SecurityGroupStats } from "@/components/ec2/SecurityGroupStats";
 import { Button } from "@/components/ui/Button";
+import { countFlattenedRules } from "@/lib/ec2/rules";
 import type {
   SecurityGroupWarning,
   SecurityGroupWithWarnings,
@@ -152,8 +153,12 @@ export default function SecurityGroupsPage() {
         header: "Rules",
         cell: ({ row }) => (
           <div className={securityGroupsTableCountsRecipe()}>
-            <span>Inbound: {row.original.inboundRules.length}</span>
-            <span>Outbound: {row.original.outboundRules.length}</span>
+            <span>
+              Inbound: {countFlattenedRules(row.original.inboundRules)}
+            </span>
+            <span>
+              Outbound: {countFlattenedRules(row.original.outboundRules)}
+            </span>
           </div>
         ),
       }),
