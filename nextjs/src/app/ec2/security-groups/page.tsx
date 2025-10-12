@@ -127,10 +127,12 @@ export default function SecurityGroupsPage() {
     return data.securityGroups.filter((group) => {
       const vpcMatches =
         selectedVpc === "all" || (group.vpcId || "EC2-Classic") === selectedVpc;
+      const tagName = group.tags?.Name?.toLowerCase() ?? "";
       const searchMatches =
         group.groupName.toLowerCase().includes(lowerSearch) ||
         group.groupId.toLowerCase().includes(lowerSearch) ||
-        group.description.toLowerCase().includes(lowerSearch);
+        group.description.toLowerCase().includes(lowerSearch) ||
+        tagName.includes(lowerSearch);
       const warningsMatch = !showOnlyWarnings || group.warnings.length > 0;
 
       return vpcMatches && searchMatches && warningsMatch;
@@ -139,6 +141,18 @@ export default function SecurityGroupsPage() {
 
   const columns = useMemo(
     () => [
+      columnHelper.accessor(
+        (row) => row.tags?.Name?.trim() ?? "",
+        {
+          id: "nameTag",
+          header: "Name",
+          sortingFn: "alphanumeric",
+          cell: (info) => {
+            const tagName = info.getValue();
+            return <span>{tagName.length ? tagName : "—"}</span>;
+          },
+        },
+      ),
       columnHelper.accessor("groupName", {
         header: "Security Group",
         sortingFn: "alphanumeric",
