@@ -27,7 +27,7 @@
     "@biomejs/biome": "^2.2.5",
     "@pandacss/dev": "^1.4.1",
     "@types/bun": "^1.2.23",
-    "@types/node": "^20",
+    "@types/node": "^24",
     "@types/pino": "^7.0.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
