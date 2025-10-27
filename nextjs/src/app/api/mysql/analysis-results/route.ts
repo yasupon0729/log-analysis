@@ -38,6 +38,8 @@ type AnalysisRow = RowDataPacket & {
   imageUploadedAt: string | null;
   imageUnit: number | null;
   imageScalingFactor: number | null;
+  aiModelName: string | null;
+  aiModelCode: string | null;
   username: string | null;
   companyName: string | null;
   userEmail: string | null;

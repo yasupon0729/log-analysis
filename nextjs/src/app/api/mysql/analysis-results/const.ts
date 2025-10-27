@@ -22,6 +22,8 @@ export const ANALYSIS_RESULTS_SELECT_FIELDS = `
   iai.uploaded_at AS imageUploadedAt,
   iai.unit AS imageUnit,
   iai.scaling_factor AS imageScalingFactor,
+  iam.ai_model_name AS aiModelName,
+  iam.ai_model_code AS aiModelCode,
   acu.username AS username,
   acu.company_name AS companyName,
   acu.email AS userEmail
@@ -30,10 +32,12 @@ export const ANALYSIS_RESULTS_SELECT_FIELDS = `
 export const ANALYSIS_RESULTS_FROM_CLAUSE = `
   FROM image_analysis_analysisdata AS iaa
   LEFT JOIN image_analysis_imageanalysis AS iai ON iai.id = iaa.image_analysis_id
+  LEFT JOIN image_analysis_aimodel AS iam ON iam.id = iai.ai_model_id
   LEFT JOIN accounts_customuser AS acu ON acu.id = iaa.user_id
 `;
 
-export const ANALYSIS_RESULTS_BASE_CONDITION = "iaa.is_deleted = 0";
+export const ANALYSIS_RESULTS_BASE_CONDITION =
+  "iaa.is_deleted = 0 AND iaa.analysis_type = '本解析'";
 
 export const ANALYSIS_RESULTS_DEFAULT_ORDER = `
   ORDER BY iaa.sent_at DESC, iaa.id DESC
