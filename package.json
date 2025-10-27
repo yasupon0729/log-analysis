@@ -5,7 +5,7 @@
     "nextjs"
   ],
   "scripts": {
-    "dev": "cd nextjs && bun dev",
+    "dev": "cd nextjs && bun dev --turbopack --port 3729",
     "build": "cd nextjs && bun build",
     "format": "bunx @biomejs/biome format --write .",
     "lint": "bunx @biomejs/biome check .",
