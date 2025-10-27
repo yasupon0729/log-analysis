@@ -47,7 +47,8 @@ type AnalysisRow = RowDataPacket & {
 
 type CountRow = RowDataPacket & { total: number };
 
-type OptionRow<T extends string> = RowDataPacket & Record<T, string | number | null>;
+type OptionRow<T extends string> = RowDataPacket &
+  Record<T, string | number | null>;
 
 function clampPage(value: number | undefined) {
   if (!value || Number.isNaN(value) || value <= 0) {
@@ -100,7 +101,9 @@ export async function GET(request: Request) {
   const pageParam = sanitizeNumericParam(url.searchParams.get("page"));
   const pageSizeParam = sanitizeNumericParam(url.searchParams.get("pageSize"));
   const userIdParam = sanitizeNumericParam(url.searchParams.get("userId"));
-  const analysisIdParam = sanitizeNumericParam(url.searchParams.get("analysisId"));
+  const analysisIdParam = sanitizeNumericParam(
+    url.searchParams.get("analysisId"),
+  );
   const statusParam = sanitizeStatusParam(url.searchParams.get("status"));
 
   const page = clampPage(pageParam);
@@ -199,8 +202,7 @@ export async function GET(request: Request) {
     }));
 
     const totalCount = total ?? 0;
-    const totalPages =
-      totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize);
+    const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / pageSize);
     const hasMore = offset + serializedRows.length < totalCount;
 
     return NextResponse.json(

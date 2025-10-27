@@ -291,7 +291,6 @@ export default function ResultsPageClient() {
     [],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <>
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -663,7 +662,10 @@ export default function ResultsPageClient() {
     if (!selectedAnalysisRow) {
       return;
     }
-    if (previousSearchParamsRef.current === null && typeof window !== "undefined") {
+    if (
+      previousSearchParamsRef.current === null &&
+      typeof window !== "undefined"
+    ) {
       previousSearchParamsRef.current = window.location.search.slice(1);
     }
     setIsPreviewModalOpen(true);
@@ -989,7 +991,32 @@ export default function ResultsPageClient() {
         </>
       )}
       {isPreviewModalOpen ? (
-        <div className={modalOverlayClass}>
+        // biome-ignore lint/a11y/useSemanticElements: <>
+        <div
+          className={modalOverlayClass}
+          role="button"
+          tabIndex={0}
+          aria-label="モーダルを閉じる"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              closePreviewModal();
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) {
+              return;
+            }
+            if (
+              event.key === "Enter" ||
+              event.key === " " ||
+              event.key === "Space" ||
+              event.key === "Spacebar"
+            ) {
+              event.preventDefault();
+              closePreviewModal();
+            }
+          }}
+        >
           <div
             className={modalContentClass}
             role="dialog"

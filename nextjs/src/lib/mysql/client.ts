@@ -1,7 +1,12 @@
 import "server-only";
 
 import { performance } from "node:perf_hooks";
-import { createPool, type Pool, type PoolOptions, type RowDataPacket } from "mysql2/promise";
+import {
+  createPool,
+  type Pool,
+  type PoolOptions,
+  type RowDataPacket,
+} from "mysql2/promise";
 import { logger } from "@/lib/logger/server";
 
 const log = logger.child({ component: "MySqlClient" });
