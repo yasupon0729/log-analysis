@@ -1,0 +1,4 @@
+- Monorepo workspace focused on a log analysis app; main frontend lives in the `nextjs/` workspace (Next.js app router).
+- Frontend fetches log/analysis data from AWS (S3, EC2) via custom APIs; includes UI for browsing results, uploads, EC2 management, etc.
+- Styling leverages Panda CSS (generated `styled-system/` tokens) and custom components.
+- Logs and Docker assets are included for local dev/deployment.

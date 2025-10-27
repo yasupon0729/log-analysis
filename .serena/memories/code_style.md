@@ -1,0 +1,5 @@
+- TypeScript + React 19 with Next.js App Router; files commonly marked `"use client"` when using hooks.
+- Biome enforces double quotes, space indentation, no dangling `any`, self-closing elements, etc.
+- Components live under `nextjs/src/components`; utility hooks in `nextjs/src/utils`, API routes under `nextjs/src/app/api` (server actions separated from client components).
+- Panda CSS utility classes via `styled-system/css` are preferred for styling instead of raw CSS.
+- Prefer descriptive logging via the shared `logger` wrapper (`@/lib/logger`).

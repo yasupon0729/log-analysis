@@ -23,6 +23,15 @@ export interface S3ListObjectsOptions {
   continuationToken?: string;
   /** 取得件数の上限 */
   maxKeys?: number;
+  /** 疑似ディレクトリ区切り */
+  delimiter?: string;
+}
+
+export interface S3CommonPrefixSummary {
+  /** デフォルトのプレフィックスを除いたプレフィックス */
+  prefix: string;
+  /** 実際のS3プレフィックス */
+  fullPrefix: string;
 }
 
 export interface S3ObjectSummary {
@@ -42,6 +51,7 @@ export interface S3ObjectSummary {
 
 export interface S3ListObjectsResult {
   objects: S3ObjectSummary[];
+  commonPrefixes: S3CommonPrefixSummary[];
   nextContinuationToken?: string;
   isTruncated: boolean;
 }

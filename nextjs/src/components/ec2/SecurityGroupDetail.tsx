@@ -1,12 +1,12 @@
 "use client";
 
 import {
-  type SortingState,
-  type Table,
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  type SortingState,
+  type Table,
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";

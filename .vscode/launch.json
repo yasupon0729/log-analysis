@@ -23,7 +23,7 @@
       "name": "Next.js: Client-side (Chrome)",
       "type": "chrome",
       "request": "launch",
-      "url": "http://localhost:3000",
+      "url": "http://localhost:3729",
       "webRoot": "${workspaceFolder}/nextjs",
       "sourceMaps": true,
       "sourceMapPathOverrides": {

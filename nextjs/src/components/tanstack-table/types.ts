@@ -1,4 +1,8 @@
-import type { ColumnDef, Table as TanstackTable } from "@tanstack/react-table";
+import type {
+  ColumnDef,
+  Row,
+  Table as TanstackTable,
+} from "@tanstack/react-table";
 
 export type CellType = "text" | "name" | "status" | "date" | "any" | "actions";
 export type FilterVariant = "text" | "select" | "dateRange";
@@ -33,4 +37,6 @@ export interface TableProps<T> {
 
 export interface TableComponentProps<T> {
   table: TanstackTable<T>;
+  onRowClick?: (row: Row<T>) => void;
+  rowSelectionMode?: "single" | "multiple" | "none";
 }

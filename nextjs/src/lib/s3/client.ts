@@ -20,6 +20,7 @@ import { logger } from "@/lib/logger/server";
 
 import type {
   S3ClientConfig,
+  S3CommonPrefixSummary,
   S3DeleteObjectsResult,
   S3GetObjectOptions,
   S3GetObjectResult,
@@ -70,6 +71,7 @@ export class S3Client {
         Prefix: prefix,
         ContinuationToken: options.continuationToken,
         MaxKeys: options.maxKeys,
+        Delimiter: options.delimiter,
       }),
     );
 
@@ -80,14 +82,28 @@ export class S3Client {
       )
       .map((object) => this.toSummary(object));
 
+    const commonPrefixes: S3CommonPrefixSummary[] = (
+      response.CommonPrefixes || []
+    )
+      .filter(
+        (entry): entry is { Prefix: string } =>
+          typeof entry.Prefix === "string" && entry.Prefix.length > 0,
+      )
+      .map((entry) => ({
+        prefix: this.stripPrefix(entry.Prefix),
+        fullPrefix: entry.Prefix,
+      }));
+
     this.logger.debug("S3 listObjects", {
       requestPrefix: prefix,
       count: objects.length,
       truncated: Boolean(response.IsTruncated),
+      commonPrefixes: commonPrefixes.length,
     });
 
     return {
       objects,
+      commonPrefixes,
       nextContinuationToken: response.NextContinuationToken,
       isTruncated: Boolean(response.IsTruncated),
     };

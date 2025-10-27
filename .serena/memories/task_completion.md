@@ -1,0 +1,4 @@
+- Run `bun run lint` (Biome) before submitting changes.
+- For UI changes, ensure dev server renders without warnings; add/update tests if present (currently no automated tests noted).
+- Document any new commands or environment variables touched.
+- Confirm Docker Compose still builds if container workflows are affected.

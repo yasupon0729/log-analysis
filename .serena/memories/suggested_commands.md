@@ -1,0 +1,7 @@
+- `bun install` inside `nextjs/` to install dependencies (Bun runtime expected).
+- `bun run dev` at repo root (wraps `bun dev` in `nextjs/`) to start the Next.js dev server on port 3729.
+- `bun run build` (root) or `bun run build --cwd nextjs` to build the production bundle.
+- `bun run lint` (root) runs Biome static analysis; `bun run lint:fix` applies auto-fixes.
+- `bun run format` formats sources via Biome.
+- `make up` / `make down` invokes Docker Compose defined in `nextjs/docker-compose.yml` for containerized runs.
+- For direct Next.js workspace usage: `bunx biome check`, `bunx biome format --write`, `bun dev`, `bun build`, `bun start` (port 3729).

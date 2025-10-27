@@ -10,6 +10,7 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   type PaginationState,
+  type Row,
   type RowSelectionState,
   type SortingState,
   useReactTable,
@@ -116,6 +117,8 @@ interface TanstackTableComponentProps<T> extends TableProps<T> {
   globalFilterPlaceholder?: string;
   pageSize?: number;
   showDebugState?: boolean;
+  onRowClick?: (row: Row<T>) => void;
+  rowSelectionMode?: "single" | "multiple" | "none";
 }
 
 const debugStateClass = css({
@@ -141,6 +144,8 @@ export default function TanstackTable<T>({
   globalFilterPlaceholder = "全列を検索",
   pageSize = 500,
   enableRowSelection = Boolean(onBulkDelete),
+  onRowClick,
+  rowSelectionMode,
   getRowId,
   showDebugState = false,
 }: TanstackTableComponentProps<T>) {
@@ -164,6 +169,37 @@ export default function TanstackTable<T>({
       isResizingColumn: false,
     });
 
+  const resolvedSelectionMode: "single" | "multiple" | "none" =
+    rowSelectionMode ??
+    (onRowClick ? "single" : enableRowSelection ? "multiple" : "none");
+
+  const shouldEnableRowSelection = resolvedSelectionMode !== "none";
+
+  const handleRowClick = onRowClick
+    ? (row: Row<T>) => {
+        setRowSelection((previous) => {
+          if (resolvedSelectionMode === "single") {
+            const alreadySelected = Boolean(previous[row.id]);
+            return alreadySelected ? {} : { [row.id]: true };
+          }
+
+          if (resolvedSelectionMode === "multiple") {
+            const next = { ...previous };
+            if (next[row.id]) {
+              delete next[row.id];
+            } else {
+              next[row.id] = true;
+            }
+            return next;
+          }
+
+          return previous;
+        });
+
+        onRowClick(row);
+      }
+    : undefined;
+
   const table = useReactTable({
     data,
     columns,
@@ -177,7 +213,7 @@ export default function TanstackTable<T>({
       columnSizing,
       columnSizingInfo,
     },
-    enableRowSelection,
+    enableRowSelection: shouldEnableRowSelection,
     enableHiding: true,
     columnResizeMode: "onChange",
     filterFns: {
@@ -193,7 +229,9 @@ export default function TanstackTable<T>({
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     onPaginationChange: setPagination,
-    onRowSelectionChange: enableRowSelection ? setRowSelection : undefined,
+    onRowSelectionChange: shouldEnableRowSelection
+      ? setRowSelection
+      : undefined,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnSizingChange: setColumnSizing,
     onColumnSizingInfoChange: setColumnSizingInfo,
@@ -294,7 +332,11 @@ export default function TanstackTable<T>({
               }}
             >
               <TanstackTableHeader table={table} />
-              <TanstackTableBody table={table} />
+              <TanstackTableBody
+                table={table}
+                onRowClick={handleRowClick}
+                rowSelectionMode={resolvedSelectionMode}
+              />
             </table>
           </div>
 

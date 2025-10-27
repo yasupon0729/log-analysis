@@ -1,0 +1,7 @@
+node_modules/
+nextjs/node_modules/
+.next/
+nextjs/.next/
+nextjs/.next/**
+nextjs/styled-system/
+nextjs/styled-system/**

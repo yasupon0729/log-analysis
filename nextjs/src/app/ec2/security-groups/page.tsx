@@ -1,11 +1,11 @@
 "use client";
 
 import {
-  type SortingState,
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
@@ -141,18 +141,15 @@ export default function SecurityGroupsPage() {
 
   const columns = useMemo(
     () => [
-      columnHelper.accessor(
-        (row) => row.tags?.Name?.trim() ?? "",
-        {
-          id: "nameTag",
-          header: "Name",
-          sortingFn: "alphanumeric",
-          cell: (info) => {
-            const tagName = info.getValue();
-            return <span>{tagName.length ? tagName : "—"}</span>;
-          },
+      columnHelper.accessor((row) => row.tags?.Name?.trim() ?? "", {
+        id: "nameTag",
+        header: "Name",
+        sortingFn: "alphanumeric",
+        cell: (info) => {
+          const tagName = info.getValue();
+          return <span>{tagName.length ? tagName : "—"}</span>;
         },
-      ),
+      }),
       columnHelper.accessor("groupName", {
         header: "Security Group",
         sortingFn: "alphanumeric",

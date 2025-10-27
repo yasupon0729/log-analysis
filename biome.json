@@ -12,9 +12,9 @@
     "enabled": true,
     "indentStyle": "space"
   },
-   "linter": {
+  "linter": {
     "enabled": true,
-     "rules": {
+    "rules": {
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "warn"

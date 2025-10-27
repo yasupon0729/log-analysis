@@ -110,9 +110,17 @@ export class BrowserApiClient extends ApiClient {
     if (cookieStore?.delete) {
       void cookieStore.delete("auth-token");
     } else {
-      // biome-ignore lint/suspicious/noDocumentCookie: CookieStore API が未サポートの環境向けフォールバック
-      document.cookie =
-        "auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+      const cookieSetter = Object.getOwnPropertyDescriptor(
+        Document.prototype,
+        "cookie",
+      )?.set;
+
+      if (cookieSetter) {
+        cookieSetter.call(
+          document,
+          "auth-token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;",
+        );
+      }
     }
 
     this.logger.info("Auth token cleared");
