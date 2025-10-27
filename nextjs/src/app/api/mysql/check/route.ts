@@ -1,3 +1,4 @@
+import type { RowDataPacket } from "mysql2";
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger/server";
 import { selectOne } from "@/lib/mysql/client";
@@ -9,7 +10,9 @@ export async function GET() {
   routeLogger.info("MySQL接続チェックを開始しました");
 
   try {
-    const row = await selectOne<{ ok: number }>("SELECT 1 AS ok");
+    const row = await selectOne<RowDataPacket & { ok: number }>(
+      "SELECT 1 AS ok",
+    );
 
     return NextResponse.json(
       {

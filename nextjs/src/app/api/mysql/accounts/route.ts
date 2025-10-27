@@ -2,6 +2,7 @@ import type { RowDataPacket } from "mysql2";
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger/server";
 import { selectRows } from "@/lib/mysql/client";
+import { GET_ACCOUNTS_QUERY } from "./const";
 
 const routeLogger = logger.child({ component: "mysql-accounts-route" });
 
@@ -10,7 +11,7 @@ export async function GET() {
 
   try {
     const rows = await selectRows<RowDataPacket & Record<string, unknown>>(
-      "SELECT * FROM accounts_customuser",
+      GET_ACCOUNTS_QUERY,
     );
     const serializedRows = rows.map((row) => ({ ...row }));
 

@@ -2,8 +2,9 @@
 
 /**
  * 解析結果ブラウザーのクライアント側実装。
- * S3 から API 経由で取得したデータを Tanstack Table に流し込み、
- * ユーザー ID / 解析 ID のフィルタと画像プレビュー機能を提供する。
+ * MySQL から解析メタデータを取得して Tanstack Table に流し込み、
+ * ユーザー ID / 解析 ID のフィルタとモーダルによる画像プレビューを提供する。
+ * プレビュー画像は download_link から導出した S3 プレフィックスを基にオンデマンド取得する。
  */
 
 import type { ColumnDef, Row } from "@tanstack/react-table";
@@ -24,8 +25,49 @@ import type {
   FilterOption,
 } from "@/components/tanstack-table/types";
 import { Button } from "@/components/ui/Button";
+import { deriveAnalysisIdentifiersFromDownloadLink } from "@/lib/analysis-results/download-link";
 import { logger } from "@/lib/logger/client";
 import { css } from "@/styled-system/css";
+
+interface AnalysisResultRow {
+  analysisDataId: number;
+  userId: string;
+  imageAnalysisId: string | null;
+  sentAt: string;
+  sentStatus: number;
+  analysisStatus: string | null;
+  analysisType: string;
+  analyzerName: string | null;
+  downloadLink: string | null;
+  imageAnalysisTitle: string | null;
+  companyName: string | null;
+  username: string | null;
+}
+
+interface MysqlAnalysisResultsSuccessResponse {
+  ok: true;
+  rows: AnalysisResultRow[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+  filters: {
+    users: string[];
+    analysisIds: string[];
+  };
+}
+
+interface MysqlAnalysisResultsErrorResponse {
+  ok: false;
+  error: string;
+}
+
+type MysqlAnalysisResultsResponse =
+  | MysqlAnalysisResultsSuccessResponse
+  | MysqlAnalysisResultsErrorResponse;
 
 interface AnalysisResultFileEntry {
   userId: string;
@@ -55,7 +97,7 @@ interface AnalysisImagePair {
   lastModified?: string;
 }
 
-interface AnalysisResultsSuccessResponse {
+interface S3AnalysisResultsSuccessResponse {
   ok: true;
   files: AnalysisResultFileEntry[];
   analyses: AnalysisResultSummary[];
@@ -67,14 +109,14 @@ interface AnalysisResultsSuccessResponse {
   };
 }
 
-interface AnalysisResultsErrorResponse {
+interface S3AnalysisResultsErrorResponse {
   ok: false;
   error: string;
 }
 
-type AnalysisResultsResponse =
-  | AnalysisResultsSuccessResponse
-  | AnalysisResultsErrorResponse;
+type S3AnalysisResultsResponse =
+  | S3AnalysisResultsSuccessResponse
+  | S3AnalysisResultsErrorResponse;
 
 const PAGE_SIZE = 20;
 
@@ -95,9 +137,8 @@ export default function ResultsPageClient() {
       ? 1
       : pageParamFromQuery;
 
-  // API から受け取った解析サマリ／ファイル一覧と、ページ操作に必要な UI ステートをまとめて管理する。
-  const [analyses, setAnalyses] = useState<AnalysisResultSummary[]>([]);
-  const [files, setFiles] = useState<AnalysisResultFileEntry[]>([]);
+  // DB から取得した解析結果一覧と各種 UI ステートを管理する。
+  const [rows, setRows] = useState<AnalysisResultRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,15 +147,20 @@ export default function ResultsPageClient() {
     useState<string>(analysisIdParam);
   const [page, setPage] = useState(analysisIdParam ? 1 : initialPage);
   const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [availableUsers, setAvailableUsers] = useState<string[]>([]);
   const [availableAnalysisIds, setAvailableAnalysisIds] = useState<string[]>(
     [],
   );
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [shouldAutoOpenModal, setShouldAutoOpenModal] = useState(false);
+  const [previewPairs, setPreviewPairs] = useState<AnalysisImagePair[]>([]);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const modalTitleId = useId();
   const previousPageRef = useRef<number>(initialPage);
   const userChangeSourceRef = useRef<"manual" | "row" | null>(null);
+  const previewCacheKeyRef = useRef<string | null>(null);
 
   const updateUrl = useCallback(
     (nextUserId: string, nextAnalysisId: string, nextPage?: number) => {
@@ -151,117 +197,100 @@ export default function ResultsPageClient() {
     [pathname, router, searchParamsString],
   );
 
-  const fetchData = useCallback(
-    async (options?: { forceRefresh?: boolean }) => {
-      // 再取得のたびにローディング表示とエラー表示をリセットする。
-      setIsLoading(true);
-      setError(null);
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
 
-      const effectivePage = selectedAnalysisId ? 1 : page;
-      const params = new URLSearchParams();
-      if (selectedUserId) {
-        params.set("userId", selectedUserId);
-      }
-      if (selectedAnalysisId) {
-        params.set("analysisId", selectedAnalysisId);
-      }
-      params.set("limit", String(PAGE_SIZE));
-      params.set("page", String(effectivePage));
-      if (options?.forceRefresh) {
-        params.set("forceRefresh", "1");
-      }
+    const effectivePage = selectedAnalysisId ? 1 : page;
+    const params = new URLSearchParams();
+    params.set("page", String(effectivePage));
+    params.set("pageSize", String(PAGE_SIZE));
+    if (selectedUserId) {
+      params.set("userId", selectedUserId);
+    }
+    if (selectedAnalysisId) {
+      params.set("analysisId", selectedAnalysisId);
+    }
 
-      const endpoint = `/api/analysis-results?${params.toString()}`;
+    const endpoint = `/api/mysql/analysis-results?${params.toString()}`;
 
-      try {
-        // API からは常に全件を取得し、フロント側でフィルタリングを行う。
-        const response = await fetch(endpoint, { cache: "no-store" });
-        const data = (await response.json()) as AnalysisResultsResponse;
+    try {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      const data = (await response.json()) as MysqlAnalysisResultsResponse;
 
-        if (!response.ok || !data.ok) {
-          const message = data.ok
-            ? `解析結果APIでエラーが発生しました (${response.status})`
-            : data.error;
-          setError(message);
-          logger.error("Failed to load analysis results", {
-            component: "ResultsPageClient",
-            status: response.status,
-            error: message,
-            endpoint,
-          });
-          return;
-        }
-
-        setAnalyses(data.analyses);
-        setFiles(data.files);
-
-        if (Array.isArray(data.users)) {
-          setAvailableUsers(data.users);
-          if (
-            !hasLoadedOnce &&
-            data.users.length > 0 &&
-            selectedUserId &&
-            !data.users.includes(selectedUserId)
-          ) {
-            const fallbackUser = data.users[0];
-            setSelectedUserId(fallbackUser);
-            setPage(1);
-            updateUrl(fallbackUser, "", 1);
-          }
-        }
-
-        const fetchedAnalysisIds = data.analyses.map(
-          (entry) => entry.analysisId,
-        );
-        setAvailableAnalysisIds((prev) => {
-          const merged = sortAnalysisIdsDesc([
-            ...prev,
-            ...fetchedAnalysisIds,
-            ...(selectedAnalysisId ? [selectedAnalysisId] : []),
-          ]);
-          if (selectedAnalysisId && !merged.includes(selectedAnalysisId)) {
-            merged.unshift(selectedAnalysisId);
-          }
-          return merged.slice(0, 200);
-        });
-
-        if (!selectedAnalysisId) {
-          const apiPage = data.pagination?.page ?? effectivePage;
-          if (apiPage !== page) {
-            setPage(apiPage);
-          }
-          setHasMore(Boolean(data.pagination?.hasMore));
-        } else {
-          setHasMore(false);
-        }
-
-        logger.info("Analysis results fetched", {
-          component: "ResultsPageClient",
-          analysisCount: data.analyses.length,
-          fileCount: data.files.length,
-          userId: selectedUserId || null,
-          analysisId: selectedAnalysisId || null,
-          page: effectivePage,
-          endpoint,
-        });
-      } catch (fetchError) {
-        const message =
-          fetchError instanceof Error
-            ? fetchError.message
-            : "解析結果の取得に失敗しました";
+      if (!response.ok || !data.ok) {
+        const message = data.ok
+          ? `解析結果の取得に失敗しました (${response.status})`
+          : data.error;
         setError(message);
-        logger.error("Analysis results fetch threw", {
+        logger.error("Failed to load analysis results from MySQL", {
           component: "ResultsPageClient",
+          status: response.status,
           error: message,
           endpoint,
         });
-      } finally {
-        setIsLoading(false);
-        setHasLoadedOnce(true);
+        return;
       }
-    },
-    [hasLoadedOnce, page, selectedAnalysisId, selectedUserId, updateUrl],
-  );
+
+      setRows(data.rows);
+      setAvailableUsers(data.filters?.users ?? []);
+      setAvailableAnalysisIds(data.filters?.analysisIds ?? []);
+
+      if (
+        !hasLoadedOnce &&
+        data.filters?.users?.length &&
+        selectedUserId &&
+        !data.filters.users.includes(selectedUserId)
+      ) {
+        const fallbackUser = data.filters.users[0] ?? "";
+        setSelectedUserId(fallbackUser);
+        setSelectedAnalysisId("");
+        setPage(1);
+        updateUrl(fallbackUser, "", 1);
+      }
+
+      if (
+        selectedAnalysisId &&
+        data.filters?.analysisIds &&
+        !data.filters.analysisIds.includes(selectedAnalysisId)
+      ) {
+        setSelectedAnalysisId("");
+        setPage(1);
+        updateUrl(selectedUserId, "", 1);
+      }
+
+      const apiPage = data.pagination?.page ?? effectivePage;
+      if (apiPage !== page) {
+        setPage(apiPage);
+      }
+
+      setHasMore(Boolean(data.pagination?.hasMore));
+      setTotalCount(data.pagination?.totalCount ?? 0);
+
+      logger.info("Analysis results fetched from MySQL", {
+        component: "ResultsPageClient",
+        rowCount: data.rows.length,
+        userId: selectedUserId || null,
+        analysisId: selectedAnalysisId || null,
+        page: apiPage,
+        endpoint,
+      });
+    } catch (fetchError) {
+      const message =
+        fetchError instanceof Error
+          ? fetchError.message
+          : "解析結果の取得に失敗しました";
+      setError(message);
+      logger.error("Analysis results fetch threw", {
+        component: "ResultsPageClient",
+        error: message,
+        endpoint,
+      });
+    } finally {
+      setIsLoading(false);
+      setHasLoadedOnce(true);
+    }
+  }, [hasLoadedOnce, page, selectedAnalysisId, selectedUserId, updateUrl]);
 
   useEffect(() => {
     // 初回マウント／フィルタ条件変更時に最新状態を取得する。
@@ -306,8 +335,6 @@ export default function ResultsPageClient() {
   useEffect(() => {
     if (selectedAnalysisId) {
       setPage(1);
-    } else {
-      setAvailableAnalysisIds([]);
     }
   }, [selectedAnalysisId]);
 
@@ -318,28 +345,29 @@ export default function ResultsPageClient() {
   }, [page, selectedAnalysisId]);
 
   useEffect(() => {
-    // データ取得が完了するまでは検証しない。
-    if (!hasLoadedOnce || !selectedUserId) {
+    if (!hasLoadedOnce) {
       return;
     }
-    const hasUser = analyses.some((entry) => entry.userId === selectedUserId);
-    if (!hasUser) {
+
+    if (selectedUserId && !availableUsers.includes(selectedUserId)) {
       setSelectedUserId("");
       setSelectedAnalysisId("");
       return;
     }
 
-    if (selectedAnalysisId) {
-      const hasAnalysis = analyses.some(
-        (entry) =>
-          entry.userId === selectedUserId &&
-          entry.analysisId === selectedAnalysisId,
-      );
-      if (!hasAnalysis) {
-        setSelectedAnalysisId("");
-      }
+    if (
+      selectedAnalysisId &&
+      !availableAnalysisIds.includes(selectedAnalysisId)
+    ) {
+      setSelectedAnalysisId("");
     }
-  }, [analyses, hasLoadedOnce, selectedAnalysisId, selectedUserId]);
+  }, [
+    availableAnalysisIds,
+    availableUsers,
+    hasLoadedOnce,
+    selectedAnalysisId,
+    selectedUserId,
+  ]);
 
   const userOptions = useMemo<FilterOption[]>(() => {
     return availableUsers.map((value) => ({ label: value, value }));
@@ -352,37 +380,20 @@ export default function ResultsPageClient() {
     ]).map((value) => ({ label: value, value }));
   }, [availableAnalysisIds, selectedAnalysisId]);
 
-  const filteredFiles = useMemo(() => {
-    return files.filter((file) => {
-      if (selectedUserId && file.userId !== selectedUserId) {
-        return false;
+  const statusFilterOptions = useMemo<FilterOption[]>(() => {
+    const unique = new Set<string>();
+    for (const row of rows) {
+      if (row.analysisStatus) {
+        unique.add(row.analysisStatus);
       }
-      if (selectedAnalysisId && file.analysisId !== selectedAnalysisId) {
-        return false;
-      }
-      return true;
-    });
-  }, [files, selectedAnalysisId, selectedUserId]);
-
-  const filteredAnalyses = useMemo(() => {
-    if (!selectedUserId) {
-      return analyses;
     }
-    return analyses.filter((entry) => entry.userId === selectedUserId);
-  }, [analyses, selectedUserId]);
-
-  const totalFileCount = filteredFiles.length;
-  const totalSize = filteredFiles.reduce(
-    (sum, file) => sum + (file.size ?? 0),
-    0,
-  );
+    return Array.from(unique)
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ label: value, value }));
+  }, [rows]);
 
   const showEmptyState =
-    hasLoadedOnce &&
-    !isLoading &&
-    !error &&
-    filteredAnalyses.length === 0 &&
-    filteredFiles.length === 0;
+    hasLoadedOnce && !isLoading && !error && rows.length === 0;
 
   const handlePrevPage = useCallback(() => {
     if (isLoading || selectedAnalysisId || page <= 1) {
@@ -403,108 +414,155 @@ export default function ResultsPageClient() {
   }, [hasMore, isLoading, page, selectedAnalysisId, selectedUserId, updateUrl]);
 
   const handleAnalysisRowClick = useCallback(
-    (row: Row<AnalysisResultSummary>) => {
-      const summary = row.original;
-      if (!summary) {
+    (tableRow: Row<AnalysisResultRow>) => {
+      const record = tableRow.original;
+      if (!record || !record.imageAnalysisId) {
+        logger.warn("解析IDが存在しないためプレビューを開けません", {
+          component: "ResultsPageClient",
+          analysisDataId: record?.analysisDataId ?? null,
+        });
         return;
       }
 
-      if (summary.userId !== selectedUserId) {
+      if (record.userId !== selectedUserId) {
         userChangeSourceRef.current = "row";
-        setSelectedUserId(summary.userId);
+        setSelectedUserId(record.userId);
       }
 
-      if (summary.analysisId !== selectedAnalysisId) {
-        setSelectedAnalysisId(summary.analysisId);
+      if (record.imageAnalysisId !== selectedAnalysisId) {
+        setSelectedAnalysisId(record.imageAnalysisId);
       }
 
       previousPageRef.current = page;
       setPage(1);
-      setAvailableAnalysisIds((prev) =>
-        sortAnalysisIdsDesc([...prev, summary.analysisId]).slice(0, 200),
-      );
-      updateUrl(summary.userId, summary.analysisId, 1);
+      updateUrl(record.userId, record.imageAnalysisId, 1);
       setShouldAutoOpenModal(true);
     },
     [page, selectedAnalysisId, selectedUserId, updateUrl],
   );
 
-  const selectedAnalysisSummary = useMemo(() => {
+  const selectedAnalysisRow = useMemo(() => {
     if (!selectedAnalysisId) {
       return null;
     }
 
     return (
-      analyses.find(
+      rows.find(
         (entry) =>
-          entry.analysisId === selectedAnalysisId &&
+          entry.imageAnalysisId === selectedAnalysisId &&
           (!selectedUserId || entry.userId === selectedUserId),
       ) ?? null
     );
-  }, [analyses, selectedAnalysisId, selectedUserId]);
+  }, [rows, selectedAnalysisId, selectedUserId]);
 
-  const analysisImagePairs = useMemo(() => {
-    if (!selectedAnalysisId) {
-      return [] as AnalysisImagePair[];
+  useEffect(() => {
+    const expectedKey = `${selectedUserId ?? ""}::${selectedAnalysisId ?? ""}`;
+    if (previewCacheKeyRef.current === expectedKey) {
+      return;
+    }
+    previewCacheKeyRef.current = null;
+    setPreviewPairs([]);
+    setPreviewError(null);
+  }, [selectedAnalysisId, selectedUserId]);
+
+  const loadPreviewPairs = useCallback(async () => {
+    if (!selectedAnalysisRow) {
+      setPreviewPairs([]);
+      setPreviewError(null);
+      return;
     }
 
-    const directoryPairs = new Map<string, AnalysisImagePair>();
-
-    for (const file of filteredFiles) {
-      if (file.analysisId !== selectedAnalysisId) {
-        continue;
-      }
-
-      const lowerName = file.fileName.toLowerCase();
-      if (lowerName !== "origin.png" && lowerName !== "segmentation.png") {
-        continue;
-      }
-
-      const directory = file.relativePath
-        ? file.relativePath.split("/").slice(0, -1).join("/") || "."
-        : ".";
-      const key = `${file.analysisId}::${directory}`;
-      const existing = directoryPairs.get(key) ?? {
-        key,
-        directory,
-        origin: undefined,
-        segmentation: undefined,
-        lastModified: file.lastModified,
-      };
-
-      if (
-        file.lastModified &&
-        (!existing.lastModified || file.lastModified > existing.lastModified)
-      ) {
-        existing.lastModified = file.lastModified;
-      }
-
-      if (lowerName === "origin.png") {
-        existing.origin = file;
-      } else {
-        existing.segmentation = file;
-      }
-
-      directoryPairs.set(key, existing);
-    }
-
-    return Array.from(directoryPairs.values()).sort((a, b) =>
-      compareByTimestampThenKey(
-        a.lastModified,
-        b.lastModified,
-        a.directory,
-        b.directory,
-      ),
+    const derived = deriveAnalysisIdentifiersFromDownloadLink(
+      selectedAnalysisRow.downloadLink,
     );
-  }, [filteredFiles, selectedAnalysisId]);
+    const previewUserId = derived?.userId ?? selectedAnalysisRow.userId;
+    const previewAnalysisId =
+      derived?.analysisId ?? selectedAnalysisRow.imageAnalysisId ?? "";
+
+    if (!previewAnalysisId) {
+      setPreviewPairs([]);
+      setPreviewError("プレビュー対象の解析IDを特定できませんでした。");
+      return;
+    }
+
+    const cacheKey = `${previewUserId}::${previewAnalysisId}`;
+    if (previewCacheKeyRef.current === cacheKey && previewPairs.length > 0) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("userId", previewUserId);
+    params.set("analysisId", previewAnalysisId);
+    params.set("limit", "500");
+
+    const endpoint = `/api/analysis-results?${params.toString()}`;
+
+    setIsPreviewLoading(true);
+    setPreviewError(null);
+    previewCacheKeyRef.current = cacheKey;
+
+    try {
+      const response = await fetch(endpoint, { cache: "no-store" });
+      const data = (await response.json()) as S3AnalysisResultsResponse;
+
+      if (!response.ok || !data.ok) {
+        const message = data.ok
+          ? `プレビュー画像の取得に失敗しました (${response.status})`
+          : data.error;
+        setPreviewError(message);
+        setPreviewPairs([]);
+        logger.error("Failed to load analysis preview files", {
+          component: "ResultsPageClient",
+          endpoint,
+          status: response.status,
+          analysisId: previewAnalysisId,
+          userId: previewUserId,
+          error: message,
+        });
+        return;
+      }
+
+      const pairs = buildPreviewPairsFromFiles(data.files, previewAnalysisId);
+      setPreviewPairs(pairs);
+    } catch (previewFetchError) {
+      const message =
+        previewFetchError instanceof Error
+          ? previewFetchError.message
+          : "プレビュー画像の取得に失敗しました";
+      setPreviewError(message);
+      setPreviewPairs([]);
+      logger.error("Analysis preview fetch threw", {
+        component: "ResultsPageClient",
+        endpoint,
+        analysisId: previewAnalysisId,
+        userId: previewUserId,
+        error: message,
+      });
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }, [previewPairs.length, selectedAnalysisRow]);
+
+  useEffect(() => {
+    if (!isPreviewModalOpen) {
+      return;
+    }
+    void loadPreviewPairs();
+  }, [isPreviewModalOpen, loadPreviewPairs]);
 
   const openPreviewModal = useCallback(() => {
+    if (!selectedAnalysisRow) {
+      return;
+    }
     setIsPreviewModalOpen(true);
-  }, []);
+  }, [selectedAnalysisRow]);
 
   const closePreviewModal = useCallback(() => {
     setIsPreviewModalOpen(false);
     setShouldAutoOpenModal(false);
+    previewCacheKeyRef.current = null;
+    setPreviewPairs([]);
+    setPreviewError(null);
     const previousPage = previousPageRef.current ?? 1;
     setSelectedAnalysisId("");
     setPage(previousPage);
@@ -537,13 +595,20 @@ export default function ResultsPageClient() {
     if (!shouldAutoOpenModal) {
       return;
     }
-    if (selectedAnalysisId) {
-      setIsPreviewModalOpen(true);
+    if (selectedAnalysisId && selectedAnalysisRow) {
+      openPreviewModal();
     }
     if (!isLoading && hasLoadedOnce) {
       setShouldAutoOpenModal(false);
     }
-  }, [hasLoadedOnce, isLoading, selectedAnalysisId, shouldAutoOpenModal]);
+  }, [
+    hasLoadedOnce,
+    isLoading,
+    openPreviewModal,
+    selectedAnalysisId,
+    selectedAnalysisRow,
+    shouldAutoOpenModal,
+  ]);
 
   const dateFormatter = useMemo(
     () =>
@@ -559,7 +624,7 @@ export default function ResultsPageClient() {
   );
 
   const analysisTableColumns = useMemo<
-    ColumnDef<AnalysisResultSummary, unknown>[]
+    ColumnDef<AnalysisResultRow, unknown>[]
   >(() => {
     const userMeta: CustomColumnMeta = {
       cellType: "text",
@@ -568,7 +633,14 @@ export default function ResultsPageClient() {
       filterPlaceholder: "ユーザーIDで絞り込み",
     };
 
-    const columns: ColumnDef<AnalysisResultSummary, unknown>[] = [
+    const statusMeta: CustomColumnMeta = {
+      cellType: "text",
+      filterVariant: "select",
+      filterOptions: statusFilterOptions,
+      filterPlaceholder: "ステータスで絞り込み",
+    };
+
+    const columns: ColumnDef<AnalysisResultRow, unknown>[] = [
       {
         accessorKey: "userId",
         header: "ユーザーID",
@@ -576,7 +648,7 @@ export default function ResultsPageClient() {
         meta: userMeta,
       },
       {
-        accessorKey: "analysisId",
+        accessorKey: "imageAnalysisId",
         header: "解析ID",
         enableColumnFilter: true,
         meta: {
@@ -586,25 +658,32 @@ export default function ResultsPageClient() {
         },
       },
       {
-        accessorKey: "fileCount",
-        header: "ファイル数",
+        accessorKey: "analysisDataId",
+        header: "AnalysisData ID",
         enableColumnFilter: false,
         meta: {
           cellType: "text",
         },
       },
       {
-        accessorKey: "totalSize",
-        header: "合計サイズ",
-        cell: (context) => formatBytes(context.getValue<number>()),
-        enableColumnFilter: false,
+        accessorKey: "analysisType",
+        header: "解析タイプ",
+        enableColumnFilter: true,
         meta: {
           cellType: "text",
+          filterVariant: "text",
+          filterPlaceholder: "解析タイプで絞り込み",
         },
       },
       {
-        accessorKey: "lastModified",
-        header: "最終更新",
+        accessorKey: "analysisStatus",
+        header: "ステータス",
+        enableColumnFilter: true,
+        meta: statusMeta,
+      },
+      {
+        accessorKey: "sentAt",
+        header: "送信日時",
         cell: (context) =>
           formatTimestamp(context.getValue<string>(), dateFormatter),
         enableColumnFilter: true,
@@ -616,8 +695,36 @@ export default function ResultsPageClient() {
         },
       },
       {
-        accessorKey: "prefix",
-        header: "S3プレフィックス",
+        accessorKey: "analyzerName",
+        header: "解析担当",
+        enableColumnFilter: true,
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          filterPlaceholder: "担当者名で絞り込み",
+        },
+      },
+      {
+        accessorKey: "imageAnalysisTitle",
+        header: "解析タイトル",
+        enableColumnFilter: true,
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          filterPlaceholder: "タイトルで絞り込み",
+        },
+      },
+      {
+        accessorKey: "downloadLink",
+        header: "ダウンロードリンク",
+        cell: (context) => {
+          const value = context.getValue<string | null>();
+          if (!value) {
+            return "-";
+          }
+          const parts = value.split("/");
+          return parts[parts.length - 1] ?? value;
+        },
         enableColumnFilter: false,
         meta: {
           cellType: "text",
@@ -627,7 +734,7 @@ export default function ResultsPageClient() {
     ];
 
     return columns;
-  }, [dateFormatter, userOptions]);
+  }, [dateFormatter, statusFilterOptions, userOptions]);
 
   const isInitialLoading = !hasLoadedOnce && isLoading;
   const isRefreshing = hasLoadedOnce && isLoading;
@@ -638,13 +745,14 @@ export default function ResultsPageClient() {
         <div>
           <h1 className={pageTitleClass}>解析結果ブラウザー</h1>
           <p className={pageDescriptionClass}>
-            S3バケット上の解析結果をフォルダ階層に基づいて表示します。ユーザーと解析IDで絞り込んで目的の結果を探せます。
+            MySQL に保存された解析メタデータを検索・絞り込みし、必要に応じて S3
+            からプレビュー画像を参照します。
           </p>
         </div>
         <Button
           type="button"
           onClick={() => {
-            void fetchData({ forceRefresh: true });
+            void fetchData();
           }}
           disabled={isLoading}
         >
@@ -707,14 +815,16 @@ export default function ResultsPageClient() {
         </label>
 
         <div className={summaryCardClass}>
-          <span className={summaryLabelClass}>対象ファイル数</span>
+          <span className={summaryLabelClass}>表示件数</span>
           <span className={summaryValueClass}>
-            {totalFileCount.toLocaleString("ja-JP")}
+            {rows.length.toLocaleString("ja-JP")}
           </span>
         </div>
         <div className={summaryCardClass}>
-          <span className={summaryLabelClass}>対象サイズ</span>
-          <span className={summaryValueClass}>{formatBytes(totalSize)}</span>
+          <span className={summaryLabelClass}>総件数</span>
+          <span className={summaryValueClass}>
+            {totalCount.toLocaleString("ja-JP")}
+          </span>
         </div>
       </section>
 
@@ -730,16 +840,18 @@ export default function ResultsPageClient() {
             <div className={sectionHeaderClass}>
               <h2 className={sectionTitleClass}>解析概要</h2>
               <span className={sectionCountBadgeClass}>
-                {filteredAnalyses.length.toLocaleString("ja-JP")} 件
+                {totalCount.toLocaleString("ja-JP")} 件
               </span>
             </div>
             <TanstackTable
-              data={filteredAnalyses}
+              data={rows}
               columns={analysisTableColumns}
               isLoading={isLoading}
               onRowClick={handleAnalysisRowClick}
               rowSelectionMode="single"
-              getRowId={(row) => `${row.userId}::${row.analysisId}`}
+              getRowId={(row) =>
+                `${row.userId}::${row.imageAnalysisId ?? row.analysisDataId}`
+              }
               globalFilterPlaceholder="全列で検索"
             />
             {!selectedAnalysisId ? (
@@ -768,17 +880,19 @@ export default function ResultsPageClient() {
           <section className={sectionContainerClass}>
             <div className={sectionHeaderClass}>
               <h2 className={sectionTitleClass}>解析ファイルプレビュー</h2>
-              {selectedAnalysisSummary ? (
+              {selectedAnalysisRow ? (
                 <span className={sectionCountBadgeClass}>
-                  {selectedAnalysisSummary.analysisId}
+                  {selectedAnalysisRow.imageAnalysisId ?? "-"}
                 </span>
               ) : null}
             </div>
             {selectedAnalysisId ? (
-              analysisImagePairs.length > 0 ? (
+              previewError ? (
+                <div className={errorAlertClass}>エラー: {previewError}</div>
+              ) : previewPairs.length > 0 ? (
                 <div className={previewLaunchContainerClass}>
                   <p className={previewLaunchMessageClass}>
-                    {`${analysisImagePairs.length.toLocaleString("ja-JP")} 件のディレクトリで origin.png と segmentation.png の組み合わせが見つかりました。`}
+                    {`${previewPairs.length.toLocaleString("ja-JP")} 件のディレクトリで origin.png と segmentation.png の組み合わせが見つかりました。`}
                     <span className={previewLaunchHintClass}>
                       下のボタンからモーダル表示を開き、スクロールしながら確認できます。
                     </span>
@@ -787,6 +901,7 @@ export default function ResultsPageClient() {
                     type="button"
                     variant="outline"
                     onClick={openPreviewModal}
+                    disabled={isPreviewLoading}
                   >
                     画像プレビューをモーダルで開く
                   </Button>
@@ -824,18 +939,22 @@ export default function ResultsPageClient() {
             <h3 id={modalTitleId} className={modalTitleClass}>
               解析ファイルプレビュー
             </h3>
-            {selectedAnalysisSummary ? (
+            {selectedAnalysisRow ? (
               <p className={modalSubtitleClass}>
-                {`ユーザー ${selectedAnalysisSummary.userId} / 解析ID ${selectedAnalysisSummary.analysisId}`}
+                {`ユーザー ${selectedAnalysisRow.userId} / 解析ID ${
+                  selectedAnalysisRow.imageAnalysisId ?? "-"
+                }`}
               </p>
             ) : null}
-            {isLoading ? (
+            {isPreviewLoading ? (
               <div className={modalInfoMessageClass}>
                 プレビューを読み込み中です…
               </div>
-            ) : analysisImagePairs.length > 0 ? (
+            ) : previewError ? (
+              <div className={modalInfoMessageClass}>{previewError}</div>
+            ) : previewPairs.length > 0 ? (
               <div className={modalPairsContainerClass}>
-                {analysisImagePairs.map((pair) => (
+                {previewPairs.map((pair) => (
                   <div key={pair.key} className={modalPairRowClass}>
                     <AnalysisImageCell
                       file={pair.origin}
@@ -955,6 +1074,60 @@ function formatTimestamp(
   }
 
   return formatter.format(new Date(timestamp));
+}
+
+function buildPreviewPairsFromFiles(
+  files: AnalysisResultFileEntry[],
+  targetAnalysisId: string,
+): AnalysisImagePair[] {
+  const directoryPairs = new Map<string, AnalysisImagePair>();
+
+  for (const file of files) {
+    if (file.analysisId !== targetAnalysisId) {
+      continue;
+    }
+
+    const lowerName = file.fileName.toLowerCase();
+    if (lowerName !== "origin.png" && lowerName !== "segmentation.png") {
+      continue;
+    }
+
+    const directory = file.relativePath
+      ? file.relativePath.split("/").slice(0, -1).join("/") || "."
+      : ".";
+    const key = `${file.analysisId}::${directory}`;
+    const existing = directoryPairs.get(key) ?? {
+      key,
+      directory,
+      origin: undefined,
+      segmentation: undefined,
+      lastModified: file.lastModified,
+    };
+
+    if (
+      file.lastModified &&
+      (!existing.lastModified || file.lastModified > existing.lastModified)
+    ) {
+      existing.lastModified = file.lastModified;
+    }
+
+    if (lowerName === "origin.png") {
+      existing.origin = file;
+    } else {
+      existing.segmentation = file;
+    }
+
+    directoryPairs.set(key, existing);
+  }
+
+  return Array.from(directoryPairs.values()).sort((a, b) =>
+    compareByTimestampThenKey(
+      a.lastModified,
+      b.lastModified,
+      a.directory,
+      b.directory,
+    ),
+  );
 }
 
 const pageContainerClass = css({
