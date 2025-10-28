@@ -64,3 +64,7 @@ ps:
 
 logs:
 	$(DOCKER_COMPOSE) logs -f
+
+rebuild-up:
+	$(DOCKER_COMPOSE) down
+	$(DOCKER_COMPOSE) up --build -d

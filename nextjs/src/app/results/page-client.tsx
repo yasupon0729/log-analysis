@@ -176,6 +176,9 @@ export default function ResultsPageClient() {
   const [previewPairs, setPreviewPairs] = useState<AnalysisImagePair[]>([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [activeDownloads, setActiveDownloads] = useState<Set<string>>(
+    () => new Set(),
+  );
   const modalTitleId = useId();
   const previewCacheKeyRef = useRef<string | null>(null);
   const previousSearchParamsRef = useRef<string | null>(null);
@@ -205,6 +208,18 @@ export default function ResultsPageClient() {
     },
     [pathname, router],
   );
+
+  const setDownloadActive = useCallback((key: string, isActive: boolean) => {
+    setActiveDownloads((previous) => {
+      const next = new Set(previous);
+      if (isActive) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }, []);
 
   const restoreUrl = useCallback(() => {
     const previous = previousSearchParamsRef.current;
@@ -291,6 +306,110 @@ export default function ResultsPageClient() {
       }
     },
     [],
+  );
+
+  const handleDownload = useCallback(
+    async (row: AnalysisResultRow, variant: "images" | "all") => {
+      const downloadKey = row.downloadLink;
+      if (!downloadKey) {
+        window.alert("ダウンロードリンクが存在しません。");
+        return;
+      }
+
+      const stateKey = `${variant}-${row.analysisDataId}`;
+      if (activeDownloads.has(stateKey)) {
+        return;
+      }
+
+      setDownloadActive(stateKey, true);
+
+      const params = new URLSearchParams();
+      params.set("key", downloadKey);
+
+      const endpoint =
+        variant === "images"
+          ? `/api/analysis-results/images?${params.toString()}`
+          : `/api/analysis-results/all-download?${params.toString()}`;
+
+      try {
+        const response = await fetch(endpoint, { method: "GET" });
+        const contentType = response.headers.get("Content-Type") ?? "";
+
+        if (response.ok && contentType.includes("application/zip")) {
+          const blob = await response.blob();
+          const disposition = response.headers.get("Content-Disposition");
+          const fallbackName = buildFallbackZipName(row, variant);
+          const fileName =
+            parseFilenameFromDisposition(disposition) ?? fallbackName;
+
+          triggerBrowserDownload(blob, fileName);
+
+          logger.info("Analysis download triggered", {
+            component: "ResultsPageClient",
+            variant,
+            analysisDataId: row.analysisDataId,
+            analysisId: row.imageAnalysisId ?? null,
+            userId: row.userId,
+            endpoint,
+            fileName,
+            status: response.status,
+          });
+
+          return;
+        }
+
+        let message =
+          variant === "images"
+            ? "画像フォルダのデータが見つかりません。"
+            : "フォルダのデータが見つかりません。";
+
+        if (contentType.includes("application/json")) {
+          try {
+            const data = (await response.json()) as {
+              error?: string;
+              message?: string;
+            };
+            message = data.message || data.error || message;
+          } catch {
+            // JSON の解析に失敗した場合は既定メッセージを使用
+          }
+        }
+
+        window.alert(message);
+        logger.warn("Analysis download returned non-zip response", {
+          component: "ResultsPageClient",
+          variant,
+          analysisDataId: row.analysisDataId,
+          analysisId: row.imageAnalysisId ?? null,
+          userId: row.userId,
+          endpoint,
+          status: response.status,
+          contentType,
+        });
+      } catch (downloadError) {
+        const message =
+          variant === "images"
+            ? "画像のダウンロードに失敗しました。"
+            : "フォルダのダウンロードに失敗しました。";
+        window.alert(message);
+
+        logger.error("Analysis download request threw", {
+          component: "ResultsPageClient",
+          variant,
+          analysisDataId: row.analysisDataId,
+          analysisId: row.imageAnalysisId ?? null,
+          userId: row.userId,
+          endpoint,
+          error:
+            downloadError instanceof Error
+              ? downloadError.message
+              : String(downloadError),
+        });
+      } finally {
+        setDownloadActive(stateKey, false);
+      }
+    },
+    [activeDownloads, setDownloadActive],
   );
 
   const fetchData = useCallback(async () => {
@@ -891,10 +1010,78 @@ export default function ResultsPageClient() {
           cellType: "text",
         },
       },
+      {
+        id: "images",
+        header: "images",
+        enableColumnFilter: false,
+        enableGlobalFilter: false,
+        meta: {
+          cellType: "actions",
+        },
+        cell: ({ row }) => {
+          const record = row.original;
+          if (!record.downloadLink) {
+            return "—";
+          }
+          const stateKey = `images-${record.analysisDataId}`;
+          const isBusy = activeDownloads.has(stateKey);
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="画像フォルダをZIPでダウンロード"
+              onClick={() => {
+                void handleDownload(record, "images");
+              }}
+              disabled={isBusy}
+              isLoading={isBusy}
+            >
+              ZIP
+            </Button>
+          );
+        },
+      },
+      {
+        id: "allDownload",
+        header: "all_DL",
+        enableColumnFilter: false,
+        enableGlobalFilter: false,
+        meta: {
+          cellType: "actions",
+        },
+        cell: ({ row }) => {
+          const record = row.original;
+          if (!record.downloadLink) {
+            return "—";
+          }
+          const stateKey = `all-${record.analysisDataId}`;
+          const isBusy = activeDownloads.has(stateKey);
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              title="解析フォルダ全体をZIPでダウンロード"
+              onClick={() => {
+                void handleDownload(record, "all");
+              }}
+              disabled={isBusy}
+              isLoading={isBusy}
+            >
+              ZIP
+            </Button>
+          );
+        },
+      },
     ];
 
     return columns;
-  }, [dateFormatter, statusFilterOptions, userOptions]);
+  }, [
+    activeDownloads,
+    dateFormatter,
+    handleDownload,
+    statusFilterOptions,
+    userOptions,
+  ]);
 
   const isInitialLoading = !hasLoadedOnce && isLoading;
   const isRefreshing = hasLoadedOnce && isLoading;
@@ -1212,6 +1399,55 @@ function formatTimestamp(
   }
 
   return formatter.format(new Date(timestamp));
+}
+
+function buildFallbackZipName(
+  row: AnalysisResultRow,
+  variant: "images" | "all",
+): string {
+  const derived = deriveAnalysisIdentifiersFromDownloadLink(row.downloadLink);
+  const base =
+    derived?.analysisId ??
+    row.imageAnalysisId ??
+    String(row.analysisDataId ?? "analysis");
+  const suffix = variant === "images" ? "images" : "all";
+  return `${base}_${suffix}.zip`;
+}
+
+function parseFilenameFromDisposition(
+  disposition: string | null,
+): string | null {
+  if (!disposition) {
+    return null;
+  }
+
+  const utf8Match = disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      // UTF-8 文字列の解釈に失敗した場合は後続処理へフォールバック
+    }
+  }
+
+  const asciiMatch =
+    disposition.match(/filename\s*=\s*"?(?<name>[^";]+)"?/i) ?? undefined;
+  const fallbackName = asciiMatch?.groups?.name ?? asciiMatch?.[1];
+  return fallbackName ?? null;
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 function buildPreviewPairsFromFiles(

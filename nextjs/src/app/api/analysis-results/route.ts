@@ -280,6 +280,10 @@ async function listAllObjects(prefix: string): Promise<S3ObjectSummary[]> {
 }
 
 async function getCachedUsers(forceRefresh: boolean): Promise<string[]> {
+  if (CACHE_TTL_MS <= 0) {
+    return resolveUserIds();
+  }
+
   const cacheKey = "users:all";
   const now = Date.now();
   const cached = usersCache.get(cacheKey);
@@ -325,6 +329,10 @@ async function getCachedAnalysisData(
   },
   forceRefresh: boolean,
 ): Promise<AnalysisCacheValue> {
+  if (CACHE_TTL_MS <= 0) {
+    return collectAnalysisData(params);
+  }
+
   const cacheKey = buildAnalysisCacheKey(params);
   const now = Date.now();
   const cached = analysisCache.get(cacheKey);
@@ -333,6 +341,8 @@ async function getCachedAnalysisData(
     analysisLogger.debug("Serving cached analysis data", {
       cacheKey,
     });
+
+    triggerBackgroundRefresh(cacheKey, params);
     return cached.value;
   }
 
@@ -345,16 +355,7 @@ async function getCachedAnalysisData(
 
   const promise = collectAnalysisData(params)
     .then((value) => {
-      analysisCache.set(cacheKey, {
-        value,
-        expiresAt: Date.now() + CACHE_TTL_MS,
-      });
-      analysisLogger.debug("Analysis data cached", {
-        cacheKey,
-        fileCount: value.files.length,
-        analysisCount: value.analyses.length,
-        ttlMs: CACHE_TTL_MS,
-      });
+      cacheAnalysisValue(cacheKey, value);
       return value;
     })
     .finally(() => {
@@ -377,6 +378,59 @@ function buildAnalysisCacheKey(params: {
     page: params.page,
     pageSize: params.pageSize,
   });
+}
+
+function cacheAnalysisValue(cacheKey: string, value: AnalysisCacheValue): void {
+  if (value.files.length === 0 && value.analyses.length === 0) {
+    analysisLogger.debug("Skipping cache store for empty analysis result", {
+      cacheKey,
+    });
+    return;
+  }
+
+  analysisCache.set(cacheKey, {
+    value,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+
+  analysisLogger.debug("Analysis data cached", {
+    cacheKey,
+    fileCount: value.files.length,
+    analysisCount: value.analyses.length,
+    ttlMs: CACHE_TTL_MS,
+  });
+}
+
+function triggerBackgroundRefresh(
+  cacheKey: string,
+  params: {
+    userId?: string;
+    analysisId?: string;
+    page: number;
+    pageSize: number;
+  },
+): void {
+  if (analysisInflight.has(cacheKey)) {
+    return;
+  }
+
+  const promise = collectAnalysisData(params).then((value) => {
+    cacheAnalysisValue(cacheKey, value);
+    return value;
+  });
+
+  promise.catch((error: unknown) => {
+    analysisLogger.warn("Background refresh failed", {
+      cacheKey,
+      error,
+    });
+  });
+
+  promise.finally(() => {
+    analysisInflight.delete(cacheKey);
+  });
+
+  analysisInflight.set(cacheKey, promise);
 }
 
 async function collectAnalysisData({
