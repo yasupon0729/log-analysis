@@ -20,7 +20,7 @@ Description=SSH tunnel to gexel.cloud
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new gexel-cloud-tunnel -NT
+ExecStart=/usr/bin/ssh -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -L 0.0.0.0:3307:localhost:3306 gexel-cloud-tunnel -NT
 Restart=always
 RestartSec=5
 

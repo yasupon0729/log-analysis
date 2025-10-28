@@ -14,10 +14,29 @@
 COMPOSE_FILE=nextjs/docker-compose.yml
 DOCKER_COMPOSE=docker compose -f $(COMPOSE_FILE)
 
-.PHONY: up down build build-up build-no-cache build-no-cache-up
+.PHONY: up down build build-up build-no-cache build-no-cache-up up-with-tunnel
 
 # コンテナをバックグラウンドで起動
 up:
+	$(DOCKER_COMPOSE) up -d
+
+# gexel.tunnel のトンネルサービスを活性化してから起動
+up-with-tunnel:
+	@if ! command -v systemctl >/dev/null 2>&1; then \
+		echo "[error] systemctl が見つかりません。WSL や systemd 対応環境で実行してください。" >&2; \
+		exit 1; \
+	fi
+	@if systemctl --user status gexel-tunnel.service >/dev/null 2>&1; then \
+		echo "[info] gexel-tunnel.service は稼働中です"; \
+	else \
+		if systemctl --user list-unit-files | grep -q '^gexel-tunnel.service'; then \
+			echo "[info] 既存の gexel-tunnel.service を起動します"; \
+			systemctl --user start gexel-tunnel.service; \
+		else \
+			echo "[info] gexel-tunnel.service が存在しないためセットアップを実行します"; \
+			./scripts/setup-gexel-tunnel.sh; \
+		fi; \
+	fi
 	$(DOCKER_COMPOSE) up -d
 
 # コンテナを停止して削除
