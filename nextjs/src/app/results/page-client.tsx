@@ -179,6 +179,10 @@ export default function ResultsPageClient() {
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(
     () => new Set(),
   );
+  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
+  const [isHydrating, setIsHydrating] = useState(false);
+  const initialFetchAbortRef = useRef<AbortController | null>(null);
+  const hydrationAbortRef = useRef<AbortController | null>(null);
   const modalTitleId = useId();
   const previewCacheKeyRef = useRef<string | null>(null);
   const previousSearchParamsRef = useRef<string | null>(null);
@@ -412,7 +416,149 @@ export default function ResultsPageClient() {
     [activeDownloads, setDownloadActive],
   );
 
+  const hydrateRemaining = useCallback(
+    async ({
+      baseParamsString,
+      startPage,
+      initialRows,
+      initialUsers,
+      controller,
+      expectedTotalCount,
+    }: {
+      baseParamsString: string;
+      startPage: number;
+      initialRows: AnalysisResultRow[];
+      initialUsers: Set<string>;
+      controller: AbortController;
+      expectedTotalCount: number;
+    }) => {
+      const signal = controller.signal;
+      let aggregatedRows = [...initialRows];
+      const aggregatedUsers = new Set(initialUsers);
+      let currentPage = startPage;
+      let hasMore = true;
+
+      while (hasMore && !signal.aborted) {
+        try {
+          const params = new URLSearchParams(baseParamsString);
+          params.set("page", String(currentPage));
+          params.set("pageSize", String(API_FETCH_PAGE_SIZE));
+          const endpoint = `/api/mysql/analysis-results?${params.toString()}`;
+
+          const response = await fetch(endpoint, {
+            cache: "no-store",
+            signal,
+          });
+          const data = (await response.json()) as MysqlAnalysisResultsResponse;
+
+          if (!response.ok || !data.ok) {
+            const message = data.ok
+              ? `解析結果の取得に失敗しました (${response.status})`
+              : data.error;
+            logger.warn("Failed to load analysis results in background", {
+              component: "ResultsPageClient",
+              page: currentPage,
+              status: response.status,
+              error: message,
+              userId: selectedUserId || null,
+            });
+            break;
+          }
+
+          if (data.filters?.users) {
+            for (const user of data.filters.users) {
+              aggregatedUsers.add(user);
+            }
+          }
+
+          const pageRows = data.rows ?? [];
+          const filteredPageRows = pageRows.filter(
+            (row) => row.analysisType === "本解析",
+          );
+          aggregatedRows = aggregatedRows.concat(filteredPageRows);
+
+          const pagination = data.pagination;
+          hasMore = pagination ? Boolean(pagination.hasMore) : false;
+
+          logger.info("Fetched analysis page", {
+            component: "ResultsPageClient",
+            phase: "background",
+            page: currentPage,
+            received: pageRows.length,
+            accumulated: aggregatedRows.length,
+            userId: selectedUserId || null,
+          });
+
+          currentPage += 1;
+
+          if (currentPage > MAX_FETCH_PAGES) {
+            logger.warn("解析結果の取得が安全上限に達しました", {
+              component: "ResultsPageClient",
+              fetchedRows: aggregatedRows.length,
+              maxFetchPages: MAX_FETCH_PAGES,
+              pageSize: API_FETCH_PAGE_SIZE,
+              userId: selectedUserId || null,
+            });
+            break;
+          }
+        } catch (backgroundError) {
+          if (signal.aborted) {
+            if (hydrationAbortRef.current === controller) {
+              hydrationAbortRef.current = null;
+            }
+            return;
+          }
+          const message =
+            backgroundError instanceof Error
+              ? backgroundError.message
+              : "解析結果の取得に失敗しました";
+          logger.error("Analysis results background fetch threw", {
+            component: "ResultsPageClient",
+            error: message,
+            page: currentPage,
+            userId: selectedUserId || null,
+          });
+          break;
+        }
+      }
+
+      if (signal.aborted) {
+        if (hydrationAbortRef.current === controller) {
+          hydrationAbortRef.current = null;
+        }
+        return;
+      }
+
+      const sortedUsers = Array.from(aggregatedUsers).sort((a, b) =>
+        a.localeCompare(b, "ja"),
+      );
+      setRows(aggregatedRows);
+      setTotalCount(Math.max(expectedTotalCount, aggregatedRows.length));
+      setAvailableUsers(sortedUsers);
+
+      if (selectedUserId && !aggregatedUsers.has(selectedUserId)) {
+        setSelectedUserId("");
+        setSelectedAnalysisId("");
+        updateUrl("", "");
+      }
+
+      setIsHydrating(false);
+      if (hydrationAbortRef.current === controller) {
+        hydrationAbortRef.current = null;
+      }
+    },
+    [selectedUserId, updateUrl],
+  );
+
   const fetchData = useCallback(async () => {
+    initialFetchAbortRef.current?.abort();
+    hydrationAbortRef.current?.abort();
+    hydrationAbortRef.current = null;
+    setIsHydrating(false);
+
+    const controller = new AbortController();
+    initialFetchAbortRef.current = controller;
+
     setIsLoading(true);
     setError(null);
 
@@ -420,121 +566,117 @@ export default function ResultsPageClient() {
     if (selectedUserId) {
       baseParams.set("userId", selectedUserId);
     }
+    const baseParamsString = baseParams.toString();
 
-    const aggregatedRows: AnalysisResultRow[] = [];
-    let aggregatedUsers: string[] | undefined;
-    let currentPage = 1;
-    let hasMore = true;
+    const fetchPage = async (pageNumber: number, signal: AbortSignal) => {
+      const params = new URLSearchParams(baseParamsString);
+      params.set("page", String(pageNumber));
+      params.set("pageSize", String(API_FETCH_PAGE_SIZE));
+      const endpoint = `/api/mysql/analysis-results?${params.toString()}`;
+
+      const response = await fetch(endpoint, { cache: "no-store", signal });
+      const data = (await response.json()) as MysqlAnalysisResultsResponse;
+
+      if (!response.ok || !data.ok) {
+        const message = data.ok
+          ? `解析結果の取得に失敗しました (${response.status})`
+          : data.error;
+        throw new Error(message);
+      }
+
+      const pageRows = data.rows ?? [];
+      const filteredPageRows = pageRows.filter(
+        (row) => row.analysisType === "本解析",
+      );
+
+      logger.info("Fetched analysis page", {
+        component: "ResultsPageClient",
+        phase: pageNumber === 1 ? "initial" : "foreground",
+        page: pageNumber,
+        received: pageRows.length,
+        accumulated: filteredPageRows.length,
+        userId: selectedUserId || null,
+      });
+
+      return { data, filteredPageRows };
+    };
 
     try {
-      while (hasMore) {
-        const params = new URLSearchParams(baseParams);
-        params.set("page", String(currentPage));
-        params.set("pageSize", String(API_FETCH_PAGE_SIZE));
-        const endpoint = `/api/mysql/analysis-results?${params.toString()}`;
+      const { data, filteredPageRows } = await fetchPage(1, controller.signal);
 
-        const response = await fetch(endpoint, { cache: "no-store" });
-        const data = (await response.json()) as MysqlAnalysisResultsResponse;
-
-        if (!response.ok || !data.ok) {
-          const message = data.ok
-            ? `解析結果の取得に失敗しました (${response.status})`
-            : data.error;
-          setError(message);
-          logger.error("Failed to load analysis results from MySQL", {
-            component: "ResultsPageClient",
-            status: response.status,
-            error: message,
-            endpoint,
-          });
-          aggregatedRows.length = 0;
-          break;
-        }
-
-        if (currentPage === 1) {
-          aggregatedUsers = data.filters?.users ?? [];
-        }
-
-        const pageRows = data.rows ?? [];
-        const filteredPageRows = pageRows.filter(
-          (row) => row.analysisType === "本解析",
-        );
-        aggregatedRows.push(...filteredPageRows);
-
-        const pagination = data.pagination;
-        if (pagination) {
-          hasMore = Boolean(pagination.hasMore);
-        } else {
-          hasMore = false;
-        }
-
-        logger.info("Fetched analysis page", {
-          component: "ResultsPageClient",
-          page: currentPage,
-          received: data.rows.length,
-          accumulated: aggregatedRows.length,
-          userId: selectedUserId || null,
-        });
-
-        currentPage += 1;
-
-        if (currentPage > MAX_FETCH_PAGES) {
-          logger.warn("解析結果の取得が安全上限に達しました", {
-            component: "ResultsPageClient",
-            fetchedRows: aggregatedRows.length,
-            maxFetchPages: MAX_FETCH_PAGES,
-            pageSize: API_FETCH_PAGE_SIZE,
-            userId: selectedUserId || null,
-          });
-          break;
-        }
+      if (controller.signal.aborted) {
+        return;
       }
+
+      const usersFromFilters = (data.filters?.users ?? [])
+        .map((user) => user.toString())
+        .sort((a, b) => a.localeCompare(b, "ja"));
+      setAvailableUsers(usersFromFilters);
+
+      setRows(filteredPageRows);
+      setTotalCount(data.pagination?.totalCount ?? filteredPageRows.length);
+
+      if (
+        !hasLoadedOnce &&
+        usersFromFilters.length > 0 &&
+        selectedUserId &&
+        !usersFromFilters.includes(selectedUserId)
+      ) {
+        const fallbackUser = usersFromFilters[0] ?? "";
+        setSelectedUserId(fallbackUser);
+        setSelectedAnalysisId("");
+        updateUrl(fallbackUser, "");
+      }
+
+      const pagination = data.pagination;
+      const hasMore = pagination ? Boolean(pagination.hasMore) : false;
+      const expectedTotalCount =
+        data.pagination?.totalCount ?? filteredPageRows.length;
 
       if (hasMore) {
-        logger.warn("解析結果の取得を最大ページ数で打ち切りました", {
-          component: "ResultsPageClient",
-          fetchedRows: aggregatedRows.length,
-          maxFetchPages: MAX_FETCH_PAGES,
-          pageSize: API_FETCH_PAGE_SIZE,
-          userId: selectedUserId || null,
+        setIsHydrating(true);
+        const backgroundController = new AbortController();
+        hydrationAbortRef.current = backgroundController;
+        void hydrateRemaining({
+          baseParamsString,
+          startPage: 2,
+          initialRows: filteredPageRows,
+          initialUsers: new Set(usersFromFilters),
+          controller: backgroundController,
+          expectedTotalCount,
         });
-      }
-
-      if (aggregatedRows.length > 0) {
-        setRows(aggregatedRows);
-        setTotalCount(aggregatedRows.length);
-
-        if (
-          !hasLoadedOnce &&
-          (aggregatedUsers?.length ?? 0) > 0 &&
-          selectedUserId &&
-          !(aggregatedUsers ?? []).includes(selectedUserId)
-        ) {
-          const fallbackUser = (aggregatedUsers ?? [])[0] ?? "";
-          setSelectedUserId(fallbackUser);
-          setSelectedAnalysisId("");
-          updateUrl(fallbackUser, "");
-        }
       } else {
-        setRows([]);
-        setTotalCount(0);
+        setIsHydrating(false);
       }
+
+      setHasLoadedOnce(true);
     } catch (fetchError) {
+      if (controller.signal.aborted) {
+        return;
+      }
       const message =
         fetchError instanceof Error
           ? fetchError.message
           : "解析結果の取得に失敗しました";
       setError(message);
+      setRows([]);
+      setTotalCount(0);
+      setIsHydrating(false);
       logger.error("Analysis results fetch threw", {
         component: "ResultsPageClient",
         error: message,
         userId: selectedUserId || null,
       });
-    } finally {
-      setIsLoading(false);
       setHasLoadedOnce(true);
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsLoading(false);
+      }
+      if (initialFetchAbortRef.current === controller) {
+        initialFetchAbortRef.current = null;
+      }
     }
-  }, [hasLoadedOnce, selectedUserId, updateUrl]);
+  }, [hydrateRemaining, hasLoadedOnce, selectedUserId, updateUrl]);
 
   const filteredRows = useMemo(() => {
     if (!showNonRootOnly) {
@@ -542,6 +684,13 @@ export default function ResultsPageClient() {
     }
     return rows.filter((row) => row.userId !== ROOT_USER_ID);
   }, [rows, showNonRootOnly]);
+
+  useEffect(() => {
+    return () => {
+      initialFetchAbortRef.current?.abort();
+      hydrationAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     // 初回マウント／フィルタ条件変更時に最新状態を取得する。
@@ -570,15 +719,15 @@ export default function ResultsPageClient() {
     }
 
     if (selectedUserId) {
-      const hasUser = rows.some((row) => row.userId === selectedUserId);
-      if (!hasUser) {
+      const hasUser = availableUsers.includes(selectedUserId);
+      if (!hasUser && !isHydrating) {
         setSelectedUserId("");
         setSelectedAnalysisId("");
         return;
       }
     }
 
-    if (selectedAnalysisId) {
+    if (selectedAnalysisId && !isHydrating) {
       const hasAnalysis = rows.some(
         (row) => row.imageAnalysisId === selectedAnalysisId,
       );
@@ -586,7 +735,14 @@ export default function ResultsPageClient() {
         setSelectedAnalysisId("");
       }
     }
-  }, [hasLoadedOnce, rows, selectedAnalysisId, selectedUserId]);
+  }, [
+    availableUsers,
+    hasLoadedOnce,
+    isHydrating,
+    rows,
+    selectedAnalysisId,
+    selectedUserId,
+  ]);
 
   useEffect(() => {
     if (!showNonRootOnly) {
@@ -1138,6 +1294,10 @@ export default function ResultsPageClient() {
           </span>
         </div>
       </section>
+
+      {isHydrating ? (
+        <div className={infoMessageClass}>全データを読み込み中です…</div>
+      ) : null}
 
       {error ? <div className={errorAlertClass}>エラー: {error}</div> : null}
 
