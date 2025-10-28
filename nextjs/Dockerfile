@@ -18,6 +18,10 @@ ENV NODE_ENV=production
 ENV PORT=3729
 ENV HOSTNAME=0.0.0.0
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json bun.lock* ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next

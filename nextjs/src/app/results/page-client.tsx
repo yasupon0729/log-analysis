@@ -45,6 +45,7 @@ interface AnalysisResultRow {
   aiModelCode: string | null;
   companyName: string | null;
   username: string | null;
+  userEmail: string | null;
 }
 
 interface MysqlAnalysisResultsSuccessResponse {
@@ -754,9 +755,16 @@ export default function ResultsPageClient() {
 
     const columns: ColumnDef<AnalysisResultRow, unknown>[] = [
       {
-        accessorKey: "userId",
+        id: "userId",
+        accessorFn: (row) =>
+          [row.userId, row.companyName, row.username]
+            .filter(
+              (value) => typeof value === "string" && value.trim().length > 0,
+            )
+            .join(" "),
         header: "ユーザー / 企業",
         enableColumnFilter: true,
+        enableGlobalFilter: true,
         meta: userMeta,
         cell: ({ row }) => {
           const userId = row.original.userId;
@@ -788,6 +796,7 @@ export default function ResultsPageClient() {
         accessorKey: "totalCount",
         header: "総件数",
         enableColumnFilter: false,
+        enableGlobalFilter: false,
         cell: (context) => {
           const value = context.getValue<number | null | undefined>();
           if (typeof value !== "number" || Number.isNaN(value)) {
@@ -797,7 +806,6 @@ export default function ResultsPageClient() {
         },
         meta: {
           cellType: "text",
-          enableGlobalFilter: false,
         },
       },
       {
@@ -806,11 +814,11 @@ export default function ResultsPageClient() {
         cell: (context) =>
           formatTimestamp(context.getValue<string>(), dateFormatter),
         enableColumnFilter: true,
+        enableGlobalFilter: false,
         meta: {
           cellType: "date",
           filterVariant: "dateRange",
           filterPlaceholder: "YYYY-MM-DD",
-          enableGlobalFilter: false,
         },
       },
       {
@@ -844,6 +852,17 @@ export default function ResultsPageClient() {
         },
       },
       {
+        accessorKey: "userEmail",
+        header: "メールアドレス",
+        enableColumnFilter: true,
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          filterPlaceholder: "メールで絞り込み",
+        },
+        cell: (context) => context.getValue<string | null>() ?? "-",
+      },
+      {
         accessorKey: "downloadLink",
         header: "ダウンロードリンク",
         cell: (context) => {
@@ -867,9 +886,9 @@ export default function ResultsPageClient() {
           );
         },
         enableColumnFilter: false,
+        enableGlobalFilter: true,
         meta: {
           cellType: "text",
-          enableGlobalFilter: true,
         },
       },
     ];
