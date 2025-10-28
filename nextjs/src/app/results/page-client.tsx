@@ -37,6 +37,7 @@ interface AnalysisResultRow {
   sentStatus: number;
   analysisStatus: string | null;
   analysisType: string;
+  totalCount: number;
   analyzerName: string | null;
   downloadLink: string | null;
   imageAnalysisTitle: string | null;
@@ -782,6 +783,22 @@ export default function ResultsPageClient() {
         header: "ステータス",
         enableColumnFilter: true,
         meta: statusMeta,
+      },
+      {
+        accessorKey: "totalCount",
+        header: "総件数",
+        enableColumnFilter: false,
+        cell: (context) => {
+          const value = context.getValue<number | null | undefined>();
+          if (typeof value !== "number" || Number.isNaN(value)) {
+            return "-";
+          }
+          return value.toLocaleString("ja-JP");
+        },
+        meta: {
+          cellType: "text",
+          enableGlobalFilter: false,
+        },
       },
       {
         accessorKey: "sentAt",
