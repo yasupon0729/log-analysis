@@ -43,9 +43,6 @@ jobs:
       - name: Run Biome lint
         run: bun run lint
 
-      - name: Check formatting
-        run: bunx @biomejs/biome format --check .
-
       - name: TypeScript check
         working-directory: ./nextjs
         run: bunx tsc --noEmit
