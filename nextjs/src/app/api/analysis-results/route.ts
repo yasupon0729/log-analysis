@@ -8,7 +8,6 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger/server";
 import { S3Client } from "@/lib/s3/client";
 import type { S3ObjectSummary } from "@/lib/s3/types";
-
 import {
   ANALYSIS_BASE_PREFIX,
   ANALYSIS_BUCKET,
@@ -17,6 +16,10 @@ import {
   ANALYSIS_SEGMENTS,
   ensureTrailingSlash,
 } from "./common";
+import {
+  resolveAnalysisIdsFromDatabase,
+  resolveUserIdsFromDatabase,
+} from "./db";
 
 // 全体を通じて利用するロガー。component を明示しておくとログ検索が楽。
 const analysisLogger = logger.child({ component: "analysis-results-route" });
@@ -266,6 +269,8 @@ export async function GET(request: Request) {
 async function listAllObjects(prefix: string): Promise<S3ObjectSummary[]> {
   const accumulated: S3ObjectSummary[] = [];
   let continuationToken: string | undefined;
+  let page = 0;
+  const startedAt = Date.now();
 
   do {
     const { objects, nextContinuationToken } = await s3Client.listObjects({
@@ -274,7 +279,15 @@ async function listAllObjects(prefix: string): Promise<S3ObjectSummary[]> {
     });
     accumulated.push(...objects);
     continuationToken = nextContinuationToken;
+    page += 1;
   } while (continuationToken);
+
+  analysisLogger.debug("S3 listObjects completed", {
+    prefix,
+    objectCount: accumulated.length,
+    pageCount: page,
+    durationMs: Date.now() - startedAt,
+  });
 
   return accumulated;
 }
@@ -340,6 +353,8 @@ async function getCachedAnalysisData(
   if (!forceRefresh && cached && cached.expiresAt > now) {
     analysisLogger.debug("Serving cached analysis data", {
       cacheKey,
+      source: "cache",
+      expiresInMs: cached.expiresAt - now,
     });
 
     triggerBackgroundRefresh(cacheKey, params);
@@ -349,13 +364,29 @@ async function getCachedAnalysisData(
   if (!forceRefresh) {
     const inflight = analysisInflight.get(cacheKey);
     if (inflight) {
+      analysisLogger.debug("Awaiting inflight analysis data", {
+        cacheKey,
+        source: "inflight",
+      });
       return inflight;
     }
   }
 
+  analysisLogger.debug("Cache miss for analysis data", {
+    cacheKey,
+    forceRefresh,
+  });
+
+  const fetchStartedAt = Date.now();
   const promise = collectAnalysisData(params)
     .then((value) => {
       cacheAnalysisValue(cacheKey, value);
+      analysisLogger.debug("Fresh analysis data collected", {
+        cacheKey,
+        durationMs: Date.now() - fetchStartedAt,
+        fileCount: value.files.length,
+        analysisCount: value.analyses.length,
+      });
       return value;
     })
     .finally(() => {
@@ -414,21 +445,32 @@ function triggerBackgroundRefresh(
     return;
   }
 
-  const promise = collectAnalysisData(params).then((value) => {
-    cacheAnalysisValue(cacheKey, value);
-    return value;
+  analysisLogger.debug("Starting background refresh", {
+    cacheKey,
   });
 
-  promise.catch((error: unknown) => {
-    analysisLogger.warn("Background refresh failed", {
-      cacheKey,
-      error,
+  const startedAt = Date.now();
+  const promise = collectAnalysisData(params)
+    .then((value) => {
+      cacheAnalysisValue(cacheKey, value);
+      analysisLogger.debug("Background refresh completed", {
+        cacheKey,
+        durationMs: Date.now() - startedAt,
+        fileCount: value.files.length,
+        analysisCount: value.analyses.length,
+      });
+      return value;
+    })
+    .catch((error: unknown) => {
+      analysisLogger.warn("Background refresh failed", {
+        cacheKey,
+        error,
+      });
+      throw error;
+    })
+    .finally(() => {
+      analysisInflight.delete(cacheKey);
     });
-  });
-
-  promise.finally(() => {
-    analysisInflight.delete(cacheKey);
-  });
 
   analysisInflight.set(cacheKey, promise);
 }
@@ -459,11 +501,10 @@ async function collectAnalysisData({
     return { files: [], analyses: [], hasMore: false };
   }
 
-  const analysisBasePrefix = buildAnalysisBasePrefix(userId);
   const desiredCount = analysisId ? 1 : pageSize * page + 1;
   const rawAnalysisIds = analysisId
     ? [analysisId]
-    : await discoverDirectChildren(analysisBasePrefix, desiredCount);
+    : await resolveAnalysisIdsFromDatabase(userId, desiredCount);
 
   const sortedAnalysisIds = sortAnalysisIdsDescending(rawAnalysisIds);
 
@@ -491,6 +532,7 @@ async function collectAnalysisData({
 
   const analysisEntries = await Promise.all(
     targetAnalysisIds.map(async (currentAnalysisId) => {
+      const analysisStartedAt = Date.now();
       const analysisPrefix = buildPrefix({
         userId,
         analysisId: currentAnalysisId,
@@ -507,6 +549,7 @@ async function collectAnalysisData({
         userId,
         analysisId: currentAnalysisId,
         count: objects.length,
+        durationMs: Date.now() - analysisStartedAt,
       });
 
       const filesForAnalysis: AnalysisResultFileEntry[] = [];
@@ -531,6 +574,13 @@ async function collectAnalysisData({
     compareByTimestampThenKey(a.lastModified, b.lastModified, a.key, b.key),
   );
 
+  analysisLogger.debug("Collect analysis data summary", {
+    userId,
+    analysisId,
+    totalFiles: collectedFiles.length,
+    analysisCount: targetAnalysisIds.length,
+  });
+
   return {
     files: collectedFiles,
     analyses: buildSummaries(collectedFiles),
@@ -539,125 +589,7 @@ async function collectAnalysisData({
 }
 
 async function resolveUserIds(expected?: string): Promise<string[]> {
-  if (expected) {
-    const exists = await userExists(expected);
-    return exists ? [expected] : [];
-  }
-
-  return discoverDirectChildren(ANALYSIS_ROOT_PREFIX);
-}
-
-async function userExists(userId: string): Promise<boolean> {
-  const userPrefix = buildUserPrefix(userId);
-  const { commonPrefixes, objects } = await s3Client.listObjects({
-    prefix: userPrefix,
-    delimiter: "/",
-    maxKeys: 1,
-  });
-
-  if (objects.length > 0) {
-    return true;
-  }
-
-  return commonPrefixes.length > 0;
-}
-
-async function listAllCommonPrefixes(
-  prefix: string,
-  desiredCount?: number,
-): Promise<string[]> {
-  const prefixes: string[] = [];
-  let continuationToken: string | undefined;
-  const maxKeys = desiredCount ? 1000 : undefined;
-
-  do {
-    const { commonPrefixes, nextContinuationToken } =
-      await s3Client.listObjects({
-        prefix,
-        delimiter: "/",
-        continuationToken,
-        maxKeys,
-      });
-
-    for (const entry of commonPrefixes ?? []) {
-      prefixes.push(entry.fullPrefix);
-    }
-
-    continuationToken = nextContinuationToken;
-  } while (continuationToken);
-
-  analysisLogger.info("Collected common prefixes", {
-    prefix,
-    count: prefixes.length,
-    first: prefixes[0] ?? null,
-    last: prefixes[prefixes.length - 1] ?? null,
-  });
-
-  return prefixes;
-}
-
-async function discoverDirectChildren(
-  basePrefix: string,
-  desiredCount?: number,
-): Promise<string[]> {
-  // CommonPrefixes が正しく得られるケースでは最もコストが低いのでまず試す。
-  const normalizedBase = ensureTrailingSlash(basePrefix);
-  const commonPrefixes = await listAllCommonPrefixes(
-    normalizedBase,
-    desiredCount,
-  );
-
-  const childCandidates = commonPrefixes
-    .map((fullPrefix) => extractDirectChild(fullPrefix, normalizedBase))
-    .filter((value): value is string => Boolean(value));
-
-  if (childCandidates.length > 0) {
-    // CommonPrefixes から取得できた場合は数値降順で上位だけを返す。
-    return selectTopAnalysisIds(childCandidates, desiredCount);
-  }
-
-  const scanned = await scanChildrenFromObjects(normalizedBase);
-  return selectTopAnalysisIds(scanned, desiredCount);
-}
-
-async function scanChildrenFromObjects(basePrefix: string): Promise<string[]> {
-  // CommonPrefixes が空あるいは親プレフィックスしか返さない場合、実際のオブジェクトキーから直下ディレクトリを推定する。
-  const normalizedBase = ensureTrailingSlash(basePrefix);
-  const discovered = new Set<string>();
-  const ordered: string[] = [];
-
-  let continuationToken: string | undefined;
-  let page = 0;
-  do {
-    const { objects, nextContinuationToken } = await s3Client.listObjects({
-      prefix: normalizedBase,
-      maxKeys: 1000,
-      continuationToken,
-    });
-
-    for (const object of objects) {
-      // 各オブジェクトのキーから親ディレクトリ直下のセグメントだけを抜き出す。
-      const child = extractFirstPathSegment(object.fullKey, normalizedBase);
-      if (child) {
-        if (!discovered.has(child)) {
-          discovered.add(child);
-          ordered.push(child);
-        }
-      }
-    }
-
-    continuationToken = nextContinuationToken;
-    page += 1;
-  } while (continuationToken);
-
-  analysisLogger.info("Common prefixes fallback engaged", {
-    basePrefix: normalizedBase,
-    discovered: ordered,
-    pageCount: page,
-    note: "CommonPrefixes returned only the parent prefix",
-  });
-
-  return ordered;
+  return resolveUserIdsFromDatabase(expected);
 }
 
 function parseAnalysisResultKey(
@@ -787,56 +719,6 @@ function buildPrefix({
   return ensureTrailingSlash(parts.join("/"));
 }
 
-function buildUserPrefix(userId: string): string {
-  return ensureTrailingSlash(`${ANALYSIS_BASE_PREFIX}/${userId}`);
-}
-
-function buildAnalysisBasePrefix(userId: string): string {
-  return ensureTrailingSlash(
-    `${ANALYSIS_BASE_PREFIX}/${userId}/${ANALYSIS_SEGMENTS.join("/")}`,
-  );
-}
-
-function extractDirectChild(
-  fullPrefix: string,
-  parentPrefix: string,
-): string | null {
-  const normalizedParent = parentPrefix.replace(/\/+$/u, "");
-  if (!fullPrefix.startsWith(normalizedParent)) {
-    return null;
-  }
-
-  let remainder = fullPrefix.slice(normalizedParent.length);
-  remainder = remainder.replace(/^\/+/, "").replace(/\/+$/u, "");
-  if (!remainder || remainder.includes("/")) {
-    return null;
-  }
-
-  return remainder;
-}
-
-function extractFirstPathSegment(
-  fullKey: string,
-  parentPrefix: string,
-): string | null {
-  // listObjects で取得したフルキーから、親プレフィックス直下のセグメントを取り出す。
-  if (!fullKey.startsWith(parentPrefix)) {
-    return null;
-  }
-
-  const remainder = fullKey.slice(parentPrefix.length);
-  if (!remainder) {
-    return null;
-  }
-
-  const [firstSegment] = remainder.split("/");
-  if (!firstSegment || firstSegment.length === 0) {
-    return null;
-  }
-
-  return firstSegment;
-}
-
 function sortAnalysisIdsDescending(values: Iterable<string>): string[] {
   return Array.from(values)
     .filter((value) => value && value.length > 0)
@@ -848,18 +730,6 @@ function sortAnalysisIdsDescending(values: Iterable<string>): string[] {
       }
       return b.localeCompare(a, "ja");
     });
-}
-
-function selectTopAnalysisIds(
-  values: Iterable<string>,
-  limit?: number,
-): string[] {
-  const unique = Array.from(new Set(values));
-  const sorted = sortAnalysisIdsDescending(unique);
-  if (limit && limit > 0) {
-    return sorted.slice(0, limit);
-  }
-  return sorted;
 }
 
 function clampInteger(

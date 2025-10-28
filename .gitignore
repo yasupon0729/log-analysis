@@ -41,3 +41,6 @@ next-env.d.ts
 /nextjs/logs/*
 logs/server/app-prod.log
 ~/.config/systemd/user/gexel-tunnel.service
+nextjs/nextjs/logs/container/server/app-prod.log
+nextjs/nextjs/logs/container/client/app-prod.log
+logs/**/*
