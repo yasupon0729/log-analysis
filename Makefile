@@ -14,7 +14,7 @@
 COMPOSE_FILE=nextjs/docker-compose.yml
 DOCKER_COMPOSE=docker compose -f $(COMPOSE_FILE)
 
-.PHONY: up down build build-up build-no-cache build-no-cache-up up-with-tunnel
+.PHONY: up down build build-up build-no-cache build-no-cache-up up-with-tunnel rebuild-up
 
 # コンテナをバックグラウンドで起動
 up:
@@ -65,6 +65,7 @@ ps:
 logs:
 	$(DOCKER_COMPOSE) logs -f
 
+# コンテナを停止・削除してから、トンネルサービスと共に起動
 rebuild-up:
-	$(DOCKER_COMPOSE) down
-	$(DOCKER_COMPOSE) up --build -d
+	$(MAKE) down
+	$(MAKE) up-with-tunnel

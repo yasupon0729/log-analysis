@@ -44,11 +44,6 @@ WSL2 上で Docker と Git が入っているメンバーが、本リポジト�
    sudo apt update
    sudo apt install -y make
    ```
-5. 依存関係を取得
-   ```bash
-   make install   # 内部で bun install を実行
-   ```
-   直接 Bun を使う場合は `bun install` でも構いません。
 
 ---
 
