@@ -17,6 +17,7 @@ import {
   sidebarRecipe,
   sidebarToggleIconRecipe,
   sidebarToggleRecipe,
+  sidebarTooltipRecipe,
   sidebarUserAvatarRecipe,
   sidebarUserInfoRecipe,
   sidebarUserNameRecipe,
@@ -52,6 +53,9 @@ export function Sidebar() {
   const pathname = usePathname();
   const [expanded, setExpanded] = useState(false);
   const [activeItem, setActiveItem] = useState(() => navItems[0]?.id ?? "");
+  const [tooltip, setTooltip] = useState<{ label: string; top: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     const width = expanded ? "240px" : "80px";
@@ -59,6 +63,12 @@ export function Sidebar() {
     return () => {
       document.documentElement.style.setProperty("--sidebar-width", "80px");
     };
+  }, [expanded]);
+
+  useEffect(() => {
+    if (expanded) {
+      setTooltip(null);
+    }
   }, [expanded]);
 
   useEffect(() => {
@@ -130,6 +140,18 @@ export function Sidebar() {
                   router.push(item.href);
                 }
               }}
+              onMouseEnter={(event) => {
+                if (!expanded) {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setTooltip({
+                    label: item.label,
+                    top: rect.top + rect.height / 2,
+                  });
+                }
+              }}
+              onMouseLeave={() => {
+                setTooltip(null);
+              }}
             >
               <span className={sidebarIconRecipe()}>{item.icon}</span>
               <span className={sidebarLabelRecipe({ expanded })}>
@@ -139,6 +161,15 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      {!expanded && tooltip ? (
+        <div
+          className={sidebarTooltipRecipe({ visible: true })}
+          style={{ top: tooltip.top }}
+        >
+          {tooltip.label}
+        </div>
+      ) : null}
 
       {/* Footer - User Info */}
       <div className={sidebarFooterRecipe()}>

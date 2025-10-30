@@ -12,7 +12,7 @@ export const sidebarRecipe = cva({
     display: "flex",
     flexDirection: "column",
     transition: "width 0.3s ease-in-out",
-    zIndex: "sticky",
+    zIndex: "overlay",
   },
   variants: {
     expanded: {
@@ -131,6 +131,40 @@ export const sidebarLabelRecipe = cva({
   },
   defaultVariants: {
     expanded: false,
+  },
+});
+
+export const sidebarTooltipRecipe = cva({
+  base: {
+    position: "fixed",
+    left: "calc(var(--sidebar-width, 80px) + 12px)",
+    backgroundColor: "neutral.900",
+    color: "neutral.100",
+    borderRadius: "md",
+    paddingInline: 3,
+    paddingBlock: 2,
+    fontSize: "sm",
+    whiteSpace: "nowrap",
+    boxShadow: "lg",
+    opacity: 0,
+    pointerEvents: "none",
+    transition: "opacity 0.15s ease-in-out, transform 0.15s ease-in-out",
+    zIndex: "dialog",
+  },
+  variants: {
+    visible: {
+      true: {
+        opacity: 1,
+        transform: "translateY(-50%)",
+      },
+      false: {
+        opacity: 0,
+        transform: "translateY(-40%)",
+      },
+    },
+  },
+  defaultVariants: {
+    visible: false,
   },
 });
 
