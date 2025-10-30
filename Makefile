@@ -68,4 +68,6 @@ logs:
 # コンテナを停止・削除してから、トンネルサービスと共に起動
 rebuild-up:
 	$(MAKE) down
+	$(MAKE) build
 	$(MAKE) up-with-tunnel
+
