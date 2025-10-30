@@ -26,7 +26,10 @@ import type {
 } from "@/components/tanstack-table/types";
 import { AlertBanner } from "@/components/ui/AlertBanner";
 import { Button } from "@/components/ui/Button";
-import { deriveAnalysisIdentifiersFromDownloadLink } from "@/lib/analysis-results/download-link";
+import {
+  type DerivedAnalysisIdentifiers,
+  deriveAnalysisIdentifiersFromDownloadLink,
+} from "@/lib/analysis-results/download-link";
 import { logger } from "@/lib/logger/client";
 import { css } from "@/styled-system/css";
 
@@ -76,6 +79,7 @@ type MysqlAnalysisResultsResponse =
 
 interface AnalysisResultFileEntry {
   userId: string;
+  analysisType: string;
   analysisId: string;
   fileName: string;
   relativePath: string;
@@ -87,6 +91,7 @@ interface AnalysisResultFileEntry {
 
 interface AnalysisResultSummary {
   userId: string;
+  analysisType: string;
   analysisId: string;
   prefix: string;
   fileCount: number;
@@ -107,6 +112,25 @@ interface AnalysisImagePair {
   originInline?: InlineImageSource;
   segmentationInline?: InlineImageSource;
   lastModified?: string;
+}
+
+interface AnalysisPreviewCell {
+  key: string;
+  label: string;
+  file?: AnalysisResultFileEntry;
+  inlineImage?: InlineImageSource;
+}
+
+interface AnalysisPreviewRow {
+  key: string;
+  cells: AnalysisPreviewCell[];
+}
+
+interface AnalysisPreviewSection {
+  key: string;
+  title: string;
+  rows: AnalysisPreviewRow[];
+  description?: string;
 }
 
 interface S3AnalysisResultsSuccessResponse {
@@ -151,9 +175,33 @@ type FallbackPreviewResponse =
   | FallbackPreviewSuccessResponse
   | FallbackPreviewErrorResponse;
 
+interface ArchivePreviewItemResponse {
+  key: string;
+  fileName: string;
+  path: string;
+  dataUrl: string;
+}
+
+interface ArchivePreviewSuccessResponse {
+  ok: true;
+  items: ArchivePreviewItemResponse[];
+}
+
+interface ArchivePreviewErrorResponse {
+  ok: false;
+  error: string;
+}
+
+type ArchivePreviewResponse =
+  | ArchivePreviewSuccessResponse
+  | ArchivePreviewErrorResponse;
+
 const API_FETCH_PAGE_SIZE = 100;
 const MAX_FETCH_PAGES = 1000;
 const ROOT_USER_ID = "1";
+
+const IMAGE_DIRECTORY_CANDIDATES = ["original_images", "oriinal_images"];
+const IMAGE_FILE_EXTENSIONS = [".png", ".jpg", ".jpeg"];
 
 export default function ResultsPageClient() {
   const searchParams = useSearchParams();
@@ -174,7 +222,9 @@ export default function ResultsPageClient() {
   const [showNonRootOnly, setShowNonRootOnly] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [shouldAutoOpenModal, setShouldAutoOpenModal] = useState(false);
-  const [previewPairs, setPreviewPairs] = useState<AnalysisImagePair[]>([]);
+  const [previewSections, setPreviewSections] = useState<
+    AnalysisPreviewSection[]
+  >([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(
@@ -237,81 +287,6 @@ export default function ResultsPageClient() {
       scroll: false,
     });
   }, [pathname, router]);
-
-  const loadFallbackPairs = useCallback(
-    async ({
-      analysisId,
-      downloadKey,
-    }: {
-      analysisId: string;
-      downloadKey: string | null;
-    }) => {
-      if (!downloadKey) {
-        setPreviewPairs([]);
-        setPreviewError(
-          "プレビューに利用できるダウンロードリンクが見つかりません",
-        );
-        return;
-      }
-
-      try {
-        const response = await fetch("/api/analysis-results/fallback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: downloadKey }),
-        });
-        const data = (await response.json()) as FallbackPreviewResponse;
-
-        if (!response.ok || !data.ok) {
-          const message = data.ok
-            ? `プレビュー画像の取得に失敗しました (${response.status})`
-            : data.error;
-          setPreviewError(message);
-          setPreviewPairs([]);
-          logger.error("Failed to build fallback preview", {
-            component: "ResultsPageClient",
-            downloadKey,
-            analysisId,
-            status: response.status,
-            error: message,
-          });
-          return;
-        }
-
-        const fallbackPairs: AnalysisImagePair[] = data.pairs.map(
-          (pair, index) => ({
-            key: `fallback-${analysisId}-${pair.key}-${index}`,
-            directory: pair.workbookName,
-            originInline: {
-              dataUrl: pair.originDataUrl,
-              sourceName: `${pair.workbookName} origin`,
-            },
-            segmentationInline: {
-              dataUrl: pair.segmentationDataUrl,
-              sourceName: `${pair.workbookName} segmentation`,
-            },
-          }),
-        );
-
-        setPreviewPairs(fallbackPairs);
-        setPreviewError(null);
-      } catch (fallbackError) {
-        const message =
-          fallbackError instanceof Error
-            ? fallbackError.message
-            : "プレビュー画像の取得に失敗しました";
-        setPreviewError(message);
-        setPreviewPairs([]);
-        logger.error("Fallback preview fetch threw", {
-          component: "ResultsPageClient",
-          downloadKey,
-          analysisId,
-          error: message,
-        });
-      }
-    },
-    [],
-  );
 
   const handleDownload = useCallback(
     async (row: AnalysisResultRow, variant: "images" | "all") => {
@@ -838,18 +813,144 @@ export default function ResultsPageClient() {
   }, [rows, selectedAnalysisId, selectedUserId]);
 
   useEffect(() => {
-    const expectedKey = `${selectedUserId ?? ""}::${selectedAnalysisId ?? ""}`;
+    const expectedKey = buildPreviewCacheKey({
+      userId: selectedUserId,
+      analysisId: selectedAnalysisId,
+      analysisType: selectedAnalysisRow?.analysisType ?? null,
+    });
     if (previewCacheKeyRef.current === expectedKey) {
       return;
     }
     previewCacheKeyRef.current = null;
-    setPreviewPairs([]);
+    setPreviewSections([]);
     setPreviewError(null);
-  }, [selectedAnalysisId, selectedUserId]);
+  }, [selectedAnalysisId, selectedAnalysisRow?.analysisType, selectedUserId]);
 
-  const loadPreviewPairs = useCallback(async () => {
+  const fetchFallbackSections = useCallback(
+    async ({
+      analysisId,
+      downloadKey,
+    }: {
+      analysisId: string;
+      downloadKey: string | null;
+    }): Promise<{
+      sections: AnalysisPreviewSection[] | null;
+      error: string | null;
+    }> => {
+      if (!downloadKey) {
+        return {
+          sections: null,
+          error: "プレビューに利用できるダウンロードリンクが見つかりません",
+        };
+      }
+
+      try {
+        const response = await fetch("/api/analysis-results/fallback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: downloadKey }),
+        });
+        const data = (await response.json()) as FallbackPreviewResponse;
+
+        if (!response.ok || !data.ok) {
+          const message = data.ok
+            ? `プレビュー画像の取得に失敗しました (${response.status})`
+            : data.error;
+          logger.error("Failed to build fallback preview", {
+            component: "ResultsPageClient",
+            downloadKey,
+            analysisId,
+            status: response.status,
+            error: message,
+          });
+          return { sections: null, error: message };
+        }
+
+        const section = buildFallbackPreviewSection(analysisId, data.pairs);
+        return { sections: [section], error: null };
+      } catch (fallbackError) {
+        const message =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : "プレビュー画像の取得に失敗しました";
+        logger.error("Fallback preview fetch threw", {
+          component: "ResultsPageClient",
+          downloadKey,
+          analysisId,
+          error: message,
+        });
+        return { sections: null, error: message };
+      }
+    },
+    [],
+  );
+
+  const fetchArchivePreviewSection = useCallback(
+    async ({
+      analysisId,
+      downloadKey,
+    }: {
+      analysisId: string;
+      downloadKey: string | null;
+    }): Promise<{
+      section: AnalysisPreviewSection | null;
+      error: string | null;
+    }> => {
+      if (!downloadKey) {
+        return {
+          section: null,
+          error: "プレビューに利用できるダウンロードリンクが見つかりません",
+        };
+      }
+
+      try {
+        const response = await fetch("/api/analysis-results/archive-preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: downloadKey }),
+        });
+        const data = (await response.json()) as ArchivePreviewResponse;
+
+        if (!response.ok || !data.ok) {
+          const message = data.ok
+            ? `ZIP 内の画像取得に失敗しました (${response.status})`
+            : data.error;
+          logger.error("Failed to build archive preview", {
+            component: "ResultsPageClient",
+            downloadKey,
+            analysisId,
+            status: response.status,
+            error: message,
+          });
+          return { section: null, error: message };
+        }
+
+        if (data.items.length === 0) {
+          return { section: null, error: null };
+        }
+
+        const section = buildArchivePreviewSection(analysisId, data.items);
+        return { section, error: null };
+      } catch (archiveError) {
+        const message =
+          archiveError instanceof Error
+            ? archiveError.message
+            : "ZIP 内の画像取得に失敗しました";
+        logger.error("Archive preview fetch threw", {
+          component: "ResultsPageClient",
+          downloadKey,
+          analysisId,
+          error: message,
+        });
+        return { section: null, error: message };
+      }
+    },
+    [],
+  );
+
+  const loadPreviewSections = useCallback(async () => {
     if (!selectedAnalysisRow) {
-      setPreviewPairs([]);
+      setPreviewSections([]);
       setPreviewError(null);
       return;
     }
@@ -862,15 +963,23 @@ export default function ResultsPageClient() {
       derived?.analysisId ?? selectedAnalysisRow.imageAnalysisId ?? "";
     const fallbackAnalysisId =
       previewAnalysisId || String(selectedAnalysisRow.analysisDataId ?? "");
+    const analysisTypeSegment = resolvePreviewAnalysisTypeSegment(
+      derived,
+      selectedAnalysisRow.analysisType,
+    );
 
     if (!previewAnalysisId) {
-      setPreviewPairs([]);
+      setPreviewSections([]);
       setPreviewError("プレビュー対象の解析IDを特定できませんでした。");
       return;
     }
 
-    const cacheKey = `${previewUserId}::${previewAnalysisId}`;
-    if (previewCacheKeyRef.current === cacheKey && previewPairs.length > 0) {
+    const cacheKey = buildPreviewCacheKey({
+      userId: previewUserId,
+      analysisId: previewAnalysisId,
+      analysisType: analysisTypeSegment,
+    });
+    if (previewCacheKeyRef.current === cacheKey && previewSections.length > 0) {
       return;
     }
 
@@ -878,6 +987,9 @@ export default function ResultsPageClient() {
     params.set("userId", previewUserId);
     params.set("analysisId", previewAnalysisId);
     params.set("limit", "500");
+    if (analysisTypeSegment) {
+      params.set("analysisType", analysisTypeSegment);
+    }
 
     const endpoint = `/api/analysis-results?${params.toString()}`;
 
@@ -894,54 +1006,128 @@ export default function ResultsPageClient() {
           ? `プレビュー画像の取得に失敗しました (${response.status})`
           : data.error;
         setPreviewError(message);
-        setPreviewPairs([]);
+        setPreviewSections([]);
+        previewCacheKeyRef.current = null;
         logger.error("Failed to load analysis preview files", {
           component: "ResultsPageClient",
           endpoint,
           status: response.status,
           analysisId: previewAnalysisId,
+          analysisType: analysisTypeSegment,
           userId: previewUserId,
           error: message,
         });
         return;
       }
 
-      const pairs = buildPreviewPairsFromFiles(data.files, previewAnalysisId);
-      if (pairs.length > 0) {
-        setPreviewPairs(pairs);
-        setPreviewError(null);
+      let sections: AnalysisPreviewSection[] = [];
+
+      if (analysisTypeSegment === "recommend") {
+        sections = buildRecommendPreviewSections(data.files, previewAnalysisId);
+      } else if (analysisTypeSegment === "screening") {
+        sections = buildScreeningOriginalSections(
+          data.files,
+          previewAnalysisId,
+        );
+      } else {
+        sections = buildMainPreviewSections(data.files, previewAnalysisId);
+      }
+
+      if (analysisTypeSegment === "screening") {
+        const archiveResult = await fetchArchivePreviewSection({
+          analysisId: previewAnalysisId,
+          downloadKey: selectedAnalysisRow.downloadLink,
+        });
+        if (archiveResult.error) {
+          setPreviewError(archiveResult.error);
+          setPreviewSections([]);
+          previewCacheKeyRef.current = null;
+          return;
+        }
+        if (archiveResult.section) {
+          sections = sections.concat(archiveResult.section);
+        }
+      }
+
+      if (sections.length === 0) {
+        if (analysisTypeSegment === "main") {
+          const fallbackResult = await fetchFallbackSections({
+            analysisId: fallbackAnalysisId,
+            downloadKey: selectedAnalysisRow.downloadLink,
+          });
+          if (fallbackResult.error) {
+            setPreviewError(fallbackResult.error);
+            setPreviewSections([]);
+            previewCacheKeyRef.current = null;
+            return;
+          }
+          if (fallbackResult.sections) {
+            setPreviewSections(fallbackResult.sections);
+            setPreviewError(null);
+            return;
+          }
+        }
+
+        setPreviewSections([]);
+        setPreviewError("プレビューに利用できる画像が見つかりませんでした。");
+        previewCacheKeyRef.current = null;
         return;
       }
 
-      await loadFallbackPairs({
-        analysisId: fallbackAnalysisId,
-        downloadKey: selectedAnalysisRow.downloadLink,
-      });
+      setPreviewSections(sections);
+      setPreviewError(null);
     } catch (previewFetchError) {
       const message =
         previewFetchError instanceof Error
           ? previewFetchError.message
           : "プレビュー画像の取得に失敗しました";
       setPreviewError(message);
-      setPreviewPairs([]);
+      setPreviewSections([]);
+      previewCacheKeyRef.current = null;
       logger.error("Analysis preview fetch threw", {
         component: "ResultsPageClient",
         endpoint,
         analysisId: previewAnalysisId,
+        analysisType: analysisTypeSegment,
         userId: previewUserId,
         error: message,
       });
     } finally {
       setIsPreviewLoading(false);
     }
-  }, [loadFallbackPairs, previewPairs.length, selectedAnalysisRow]);
+  }, [
+    fetchArchivePreviewSection,
+    fetchFallbackSections,
+    previewSections.length,
+    selectedAnalysisRow,
+  ]);
+
+  const previewImageCount = useMemo(() => {
+    return previewSections.reduce((total, section) => {
+      const sectionCount = section.rows.reduce(
+        (accumulator, row) => accumulator + row.cells.length,
+        0,
+      );
+      return total + sectionCount;
+    }, 0);
+  }, [previewSections]);
+
+  const previewSectionSummaries = useMemo(() => {
+    return previewSections.map((section) => {
+      const count = section.rows.reduce(
+        (accumulator, row) => accumulator + row.cells.length,
+        0,
+      );
+      return `${section.title} (${count.toLocaleString("ja-JP")})`;
+    });
+  }, [previewSections]);
 
   useEffect(() => {
     if (!isPreviewModalOpen) {
       return;
     }
-    void loadPreviewPairs();
-  }, [isPreviewModalOpen, loadPreviewPairs]);
+    void loadPreviewSections();
+  }, [isPreviewModalOpen, loadPreviewSections]);
 
   const openPreviewModal = useCallback(() => {
     if (!selectedAnalysisRow) {
@@ -960,7 +1146,7 @@ export default function ResultsPageClient() {
     setIsPreviewModalOpen(false);
     setShouldAutoOpenModal(false);
     previewCacheKeyRef.current = null;
-    setPreviewPairs([]);
+    setPreviewSections([]);
     setPreviewError(null);
     setSelectedAnalysisId("");
     restoreUrl();
@@ -1384,10 +1570,15 @@ export default function ResultsPageClient() {
                   description={previewError}
                   className={bannerMarginClass}
                 />
-              ) : previewPairs.length > 0 ? (
+              ) : previewSections.length > 0 ? (
                 <div className={previewLaunchContainerClass}>
                   <p className={previewLaunchMessageClass}>
-                    {`${previewPairs.length.toLocaleString("ja-JP")} 件のディレクトリで origin.png と segmentation.png の組み合わせが見つかりました。`}
+                    {`${previewImageCount.toLocaleString("ja-JP")} 件のプレビュー画像が見つかりました。`}
+                    {previewSectionSummaries.length > 0 ? (
+                      <span className={previewLaunchHintClass}>
+                        {previewSectionSummaries.join(" / ")}
+                      </span>
+                    ) : null}
                     <span className={previewLaunchHintClass}>
                       下のボタンからモーダル表示を開き、スクロールしながら確認できます。
                     </span>
@@ -1403,13 +1594,12 @@ export default function ResultsPageClient() {
                 </div>
               ) : (
                 <div className={infoMessageClass}>
-                  origin.png / segmentation.png の組み合わせが見つかりません。
+                  プレビューに利用できる画像が見つかりません。
                 </div>
               )
             ) : (
               <div className={infoMessageClass}>
-                {"解析概要の行をクリックすると対応する origin.png / "}
-                {"segmentation.png が表示されます。"}
+                解析概要の行をクリックすると対応するプレビュー画像が表示されます。
               </div>
             )}
           </section>
@@ -1472,30 +1662,38 @@ export default function ResultsPageClient() {
               </div>
             ) : previewError ? (
               <div className={modalInfoMessageClass}>{previewError}</div>
-            ) : previewPairs.length > 0 ? (
-              <div className={modalPairsContainerClass}>
-                {previewPairs.map((pair) => (
-                  <div key={pair.key} className={modalPairRowClass}>
-                    <AnalysisImageCell
-                      file={pair.origin}
-                      inlineImage={pair.originInline}
-                      label="origin.png"
-                      dateFormatter={dateFormatter}
-                      size="modal"
-                    />
-                    <AnalysisImageCell
-                      file={pair.segmentation}
-                      inlineImage={pair.segmentationInline}
-                      label="segmentation.png"
-                      dateFormatter={dateFormatter}
-                      size="modal"
-                    />
+            ) : previewSections.length > 0 ? (
+              <div className={modalSectionsContainerClass}>
+                {previewSections.map((section) => (
+                  <div key={section.key} className={modalSectionClass}>
+                    <h4 className={modalSectionTitleClass}>{section.title}</h4>
+                    {section.description ? (
+                      <p className={modalSectionDescriptionClass}>
+                        {section.description}
+                      </p>
+                    ) : null}
+                    <div className={modalPairsContainerClass}>
+                      {section.rows.map((row) => (
+                        <div key={row.key} className={modalPairRowClass}>
+                          {row.cells.map((cell) => (
+                            <AnalysisImageCell
+                              key={cell.key}
+                              file={cell.file}
+                              inlineImage={cell.inlineImage}
+                              label={cell.label}
+                              dateFormatter={dateFormatter}
+                              size="modal"
+                            />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
             ) : (
               <div className={modalInfoMessageClass}>
-                origin.png / segmentation.png の組み合わせが見つかりません。
+                プレビューに利用できる画像が見つかりません。
               </div>
             )}
           </div>
@@ -1706,6 +1904,314 @@ function buildPreviewPairsFromFiles(
   );
 }
 
+function buildMainPreviewSections(
+  files: AnalysisResultFileEntry[],
+  targetAnalysisId: string,
+): AnalysisPreviewSection[] {
+  const pairs = buildPreviewPairsFromFiles(files, targetAnalysisId);
+  if (pairs.length === 0) {
+    return [];
+  }
+
+  const rows: AnalysisPreviewRow[] = pairs.map((pair) => ({
+    key: pair.key,
+    cells: [
+      {
+        key: `${pair.key}-origin`,
+        label: "origin.png",
+        file: pair.origin,
+        inlineImage: pair.originInline,
+      },
+      {
+        key: `${pair.key}-segmentation`,
+        label: "segmentation.png",
+        file: pair.segmentation,
+        inlineImage: pair.segmentationInline,
+      },
+    ],
+  }));
+
+  return [
+    {
+      key: `main-${targetAnalysisId}`,
+      title: "origin.png / segmentation.png",
+      rows,
+    },
+  ];
+}
+
+function buildRecommendPreviewSections(
+  files: AnalysisResultFileEntry[],
+  targetAnalysisId: string,
+): AnalysisPreviewSection[] {
+  const sections: AnalysisPreviewSection[] = [];
+  const directoryPrefixes = IMAGE_DIRECTORY_CANDIDATES.map(
+    (directory) => `${directory.toLowerCase()}/`,
+  );
+
+  const originalImages = collectImageFiles(
+    files,
+    targetAnalysisId,
+    (_file, lowerPath) =>
+      directoryPrefixes.some((prefix) => lowerPath.startsWith(prefix)),
+  );
+
+  if (originalImages.length > 0) {
+    sections.push(
+      buildImageListSection(
+        "original_images 配下",
+        `recommend-${targetAnalysisId}-original`,
+        originalImages,
+        {
+          description:
+            "original_images ディレクトリ内の PNG/JPG を表示しています。",
+          itemsPerRow: 2,
+        },
+      ),
+    );
+  }
+
+  const rootImages = collectImageFiles(
+    files,
+    targetAnalysisId,
+    (_file, lowerPath) => !lowerPath.includes("/"),
+  );
+
+  if (rootImages.length > 0) {
+    sections.push(
+      buildImageListSection(
+        "解析フォルダー直下",
+        `recommend-${targetAnalysisId}-root`,
+        rootImages,
+        {
+          description: "原画像直下に配置された PNG/JPG を表示しています。",
+          itemsPerRow: 2,
+        },
+      ),
+    );
+  }
+
+  return sections;
+}
+
+function buildScreeningOriginalSections(
+  files: AnalysisResultFileEntry[],
+  targetAnalysisId: string,
+): AnalysisPreviewSection[] {
+  const sections: AnalysisPreviewSection[] = [];
+  const directoryPrefixes = IMAGE_DIRECTORY_CANDIDATES.map(
+    (directory) => `${directory.toLowerCase()}/`,
+  );
+
+  const originalImages = collectImageFiles(
+    files,
+    targetAnalysisId,
+    (_file, lowerPath) =>
+      directoryPrefixes.some((prefix) => lowerPath.startsWith(prefix)),
+  );
+
+  if (originalImages.length > 0) {
+    sections.push(
+      buildImageListSection(
+        "original_images 配下",
+        `screening-${targetAnalysisId}-original`,
+        originalImages,
+        {
+          description:
+            "original_images ディレクトリ内の PNG/JPG を表示しています。",
+          itemsPerRow: 2,
+        },
+      ),
+    );
+  }
+
+  return sections;
+}
+
+function buildImageListSection(
+  title: string,
+  keyPrefix: string,
+  files: AnalysisResultFileEntry[],
+  options: {
+    description?: string;
+    itemsPerRow?: number;
+  } = {},
+): AnalysisPreviewSection {
+  const { description, itemsPerRow = 1 } = options;
+
+  const rows: AnalysisPreviewRow[] = [];
+  for (let index = 0; index < files.length; index += itemsPerRow) {
+    const slice = files.slice(index, index + itemsPerRow);
+    rows.push({
+      key: `${keyPrefix}-row-${index}`,
+      cells: slice.map((file, sliceIndex) => ({
+        key: `${keyPrefix}-cell-${index + sliceIndex}`,
+        label: file.fileName,
+        file,
+      })),
+    });
+  }
+
+  return {
+    key: keyPrefix,
+    title,
+    description,
+    rows,
+  };
+}
+
+function buildArchivePreviewSection(
+  analysisId: string,
+  items: ArchivePreviewItemResponse[],
+): AnalysisPreviewSection {
+  const sorted = [...items].sort((a, b) => a.path.localeCompare(b.path, "ja"));
+
+  const rows: AnalysisPreviewRow[] = [];
+  const itemsPerRow = 2;
+  for (let index = 0; index < sorted.length; index += itemsPerRow) {
+    const slice = sorted.slice(index, index + itemsPerRow);
+    rows.push({
+      key: `archive-${analysisId}-row-${index}`,
+      cells: slice.map((item, sliceIndex) => ({
+        key: `archive-${analysisId}-item-${index + sliceIndex}`,
+        label: item.fileName,
+        inlineImage: {
+          dataUrl: item.dataUrl,
+          sourceName: item.path,
+        },
+      })),
+    });
+  }
+
+  return {
+    key: `archive-${analysisId}`,
+    title: "ZIP 内の画像",
+    description:
+      "ZIP アーカイブに格納されている PNG/JPG ファイルを展開しています。",
+    rows,
+  };
+}
+
+function buildFallbackPreviewSection(
+  analysisId: string,
+  pairs: FallbackPreviewPairResponse[],
+): AnalysisPreviewSection {
+  return {
+    key: `fallback-${analysisId}`,
+    title: "フォールバック画像",
+    description: "Excel ワークブックから抽出した画像を表示しています。",
+    rows: pairs.map((pair, index) => ({
+      key: `fallback-${analysisId}-${index}`,
+      cells: [
+        {
+          key: `fallback-${analysisId}-${index}-origin`,
+          label: "origin",
+          inlineImage: {
+            dataUrl: pair.originDataUrl,
+            sourceName: `${pair.workbookName} origin`,
+          },
+        },
+        {
+          key: `fallback-${analysisId}-${index}-segmentation`,
+          label: "segmentation",
+          inlineImage: {
+            dataUrl: pair.segmentationDataUrl,
+            sourceName: `${pair.workbookName} segmentation`,
+          },
+        },
+      ],
+    })),
+  };
+}
+
+function collectImageFiles(
+  files: AnalysisResultFileEntry[],
+  targetAnalysisId: string,
+  predicate: (
+    file: AnalysisResultFileEntry,
+    lowerRelativePath: string,
+  ) => boolean,
+): AnalysisResultFileEntry[] {
+  return files
+    .filter((file) => file.analysisId === targetAnalysisId)
+    .filter((file) => {
+      if (!isSupportedImageFile(file.fileName)) {
+        return false;
+      }
+      const lowerPath = file.relativePath.toLowerCase();
+      return predicate(file, lowerPath);
+    })
+    .sort((a, b) =>
+      compareByTimestampThenKey(
+        a.lastModified,
+        b.lastModified,
+        a.relativePath,
+        b.relativePath,
+      ),
+    );
+}
+
+function isSupportedImageFile(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return IMAGE_FILE_EXTENSIONS.some((extension) => lower.endsWith(extension));
+}
+
+function buildPreviewCacheKey({
+  userId,
+  analysisId,
+  analysisType,
+}: {
+  userId?: string | null;
+  analysisId?: string | null;
+  analysisType?: string | null;
+}): string {
+  return [userId ?? "", analysisId ?? "", analysisType ?? ""].join("::");
+}
+
+function resolvePreviewAnalysisTypeSegment(
+  derived: DerivedAnalysisIdentifiers | null,
+  analysisTypeLabel: string | null,
+): string {
+  if (derived?.analysisType) {
+    return derived.analysisType;
+  }
+
+  const normalizedLabel = (analysisTypeLabel ?? "").toLowerCase();
+
+  if (
+    normalizedLabel.includes("recommend") ||
+    normalizedLabel.includes("新版") ||
+    normalizedLabel.includes("推奨") ||
+    normalizedLabel.includes("リコメンド")
+  ) {
+    return "recommend";
+  }
+
+  if (
+    normalizedLabel.includes("screen") ||
+    normalizedLabel.includes("スクリーン") ||
+    normalizedLabel.includes("スクリーニング")
+  ) {
+    if (normalizedLabel.includes("旧")) {
+      return "screening";
+    }
+    if (normalizedLabel.includes("新") || normalizedLabel.includes("推奨")) {
+      return "recommend";
+    }
+    return "screening";
+  }
+
+  if (
+    normalizedLabel.includes("main") ||
+    normalizedLabel.includes("本解析") ||
+    normalizedLabel.includes("標準")
+  ) {
+    return "main";
+  }
+
+  return "main";
+}
+
 const pageContainerClass = css({
   paddingX: { base: 4, md: 8 },
   paddingY: 6,
@@ -1795,6 +2301,29 @@ const infoMessageClass = css({
   border: "thin",
   borderColor: "border.subtle",
   padding: 4,
+});
+
+const modalSectionsContainerClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+});
+
+const modalSectionClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+});
+
+const modalSectionTitleClass = css({
+  fontSize: "lg",
+  fontWeight: "semibold",
+  color: "text.primary",
+});
+
+const modalSectionDescriptionClass = css({
+  fontSize: "sm",
+  color: "text.secondary",
 });
 
 const modalPairsContainerClass = css({

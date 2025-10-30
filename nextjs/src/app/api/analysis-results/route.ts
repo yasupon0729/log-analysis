@@ -11,9 +11,10 @@ import type { S3ObjectSummary } from "@/lib/s3/types";
 import {
   ANALYSIS_BASE_PREFIX,
   ANALYSIS_BUCKET,
+  ANALYSIS_DEFAULT_TYPE_SEGMENT,
+  ANALYSIS_PATH_BASE_SEGMENTS,
   ANALYSIS_REGION,
   ANALYSIS_ROOT_PREFIX,
-  ANALYSIS_SEGMENTS,
   ensureTrailingSlash,
 } from "./common";
 import {
@@ -63,6 +64,7 @@ const analysisInflight = new Map<string, Promise<AnalysisCacheValue>>();
 
 interface AnalysisResultFileEntry {
   userId: string;
+  analysisType: string;
   analysisId: string;
   fileName: string;
   relativePath: string;
@@ -74,6 +76,7 @@ interface AnalysisResultFileEntry {
 
 interface AnalysisResultSummary {
   userId: string;
+  analysisType: string;
   analysisId: string;
   prefix: string;
   fileCount: number;
@@ -106,6 +109,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const userIdParam = url.searchParams.get("userId") || undefined;
   const analysisIdParam = url.searchParams.get("analysisId") || undefined;
+  const analysisTypeParam = normalizeAnalysisTypeParam(
+    url.searchParams.get("analysisType") || undefined,
+  );
   const limitParam = url.searchParams.get("limit") || undefined;
   const pageParam = url.searchParams.get("page") || undefined;
   const forceRefreshParam = url.searchParams.get("forceRefresh") || undefined;
@@ -117,12 +123,14 @@ export async function GET(request: Request) {
 
   const prefix = buildPrefix({
     userId: userIdParam,
+    analysisType: analysisTypeParam,
     analysisId: analysisIdParam,
   });
 
   analysisLogger.info("Analysis results fetch requested", {
     userId: userIdParam,
     analysisId: analysisIdParam,
+    analysisType: analysisTypeParam,
     prefix,
   });
 
@@ -151,6 +159,7 @@ export async function GET(request: Request) {
             {
               userId,
               analysisId: undefined,
+              analysisType: analysisTypeParam,
               page: 1,
               pageSize: aggregatedPageSize,
             },
@@ -220,6 +229,7 @@ export async function GET(request: Request) {
       {
         userId: userIdParam,
         analysisId: analysisIdParam,
+        analysisType: analysisTypeParam,
         page,
         pageSize,
       },
@@ -337,6 +347,7 @@ async function getCachedAnalysisData(
   params: {
     userId?: string;
     analysisId?: string;
+    analysisType?: string;
     page: number;
     pageSize: number;
   },
@@ -400,12 +411,14 @@ async function getCachedAnalysisData(
 function buildAnalysisCacheKey(params: {
   userId?: string;
   analysisId?: string;
+  analysisType?: string;
   page: number;
   pageSize: number;
 }): string {
   return JSON.stringify({
     userId: params.userId ?? null,
     analysisId: params.analysisId ?? null,
+    analysisType: params.analysisType ?? null,
     page: params.page,
     pageSize: params.pageSize,
   });
@@ -437,6 +450,7 @@ function triggerBackgroundRefresh(
   params: {
     userId?: string;
     analysisId?: string;
+    analysisType?: string;
     page: number;
     pageSize: number;
   },
@@ -478,11 +492,13 @@ function triggerBackgroundRefresh(
 async function collectAnalysisData({
   userId,
   analysisId,
+  analysisType,
   page,
   pageSize,
 }: {
   userId?: string;
   analysisId?: string;
+  analysisType?: string;
   page: number;
   pageSize: number;
 }): Promise<{
@@ -494,6 +510,10 @@ async function collectAnalysisData({
   if (!userId) {
     return { files: [], analyses: [], hasMore: false };
   }
+
+  const normalizedAnalysisType = normalizeAnalysisTypeParam(analysisType);
+  const resolvedAnalysisType =
+    normalizedAnalysisType ?? ANALYSIS_DEFAULT_TYPE_SEGMENT;
 
   const availableUsers = await resolveUserIds(userId);
   if (!availableUsers.includes(userId)) {
@@ -523,6 +543,8 @@ async function collectAnalysisData({
   analysisLogger.info("Resolved target analysis IDs", {
     userId,
     analysisId,
+    analysisTypeFilter: normalizedAnalysisType ?? null,
+    resolvedAnalysisType,
     page,
     pageSize,
     candidateCount: sortedAnalysisIds.length,
@@ -535,12 +557,14 @@ async function collectAnalysisData({
       const analysisStartedAt = Date.now();
       const analysisPrefix = buildPrefix({
         userId,
+        analysisType: resolvedAnalysisType,
         analysisId: currentAnalysisId,
       });
 
       analysisLogger.info("Listing analysis objects", {
         userId,
         analysisId: currentAnalysisId,
+        analysisType: resolvedAnalysisType,
         analysisPrefix,
       });
 
@@ -548,6 +572,7 @@ async function collectAnalysisData({
       analysisLogger.info("Fetched analysis objects", {
         userId,
         analysisId: currentAnalysisId,
+        analysisType: resolvedAnalysisType,
         count: objects.length,
         durationMs: Date.now() - analysisStartedAt,
       });
@@ -558,6 +583,7 @@ async function collectAnalysisData({
         const parsed = parseAnalysisResultKey(object, {
           userId,
           analysisId: currentAnalysisId,
+          analysisType: normalizedAnalysisType,
         });
         if (parsed) {
           filesForAnalysis.push(parsed);
@@ -577,6 +603,7 @@ async function collectAnalysisData({
   analysisLogger.debug("Collect analysis data summary", {
     userId,
     analysisId,
+    analysisType: resolvedAnalysisType,
     totalFiles: collectedFiles.length,
     analysisCount: targetAnalysisIds.length,
   });
@@ -594,7 +621,7 @@ async function resolveUserIds(expected?: string): Promise<string[]> {
 
 function parseAnalysisResultKey(
   object: S3ObjectSummary,
-  filters: { userId?: string; analysisId?: string },
+  filters: { userId?: string; analysisId?: string; analysisType?: string },
 ): AnalysisResultFileEntry | null {
   const normalizedKey = object.fullKey.replace(/^\/+/u, "");
   if (!normalizedKey.startsWith(ANALYSIS_ROOT_PREFIX)) {
@@ -606,7 +633,10 @@ function parseAnalysisResultKey(
     .split("/")
     .filter((segment) => segment.length > 0);
 
-  if (segments.length < 1 + ANALYSIS_SEGMENTS.length + 1) {
+  const minimumSegments =
+    1 + ANALYSIS_PATH_BASE_SEGMENTS.length + 2; /* analysisType + analysisId */
+
+  if (segments.length < minimumSegments) {
     return null;
   }
 
@@ -615,11 +645,21 @@ function parseAnalysisResultKey(
     return null;
   }
 
-  if (!matchesSegments(rest, ANALYSIS_SEGMENTS)) {
+  if (!matchesSegments(rest, ANALYSIS_PATH_BASE_SEGMENTS)) {
     return null;
   }
 
-  const analysisId = rest[ANALYSIS_SEGMENTS.length];
+  const typeIndex = ANALYSIS_PATH_BASE_SEGMENTS.length;
+  const analysisType = rest[typeIndex]?.toLowerCase();
+  if (!analysisType) {
+    return null;
+  }
+
+  if (filters.analysisType && filters.analysisType !== analysisType) {
+    return null;
+  }
+
+  const analysisId = rest[typeIndex + 1];
   if (
     !analysisId ||
     (filters.analysisId && filters.analysisId !== analysisId)
@@ -627,17 +667,22 @@ function parseAnalysisResultKey(
     return null;
   }
 
-  const pathSegments = rest.slice(ANALYSIS_SEGMENTS.length + 1);
+  const pathSegments = rest.slice(typeIndex + 2);
   if (pathSegments.length === 0) {
     return null;
   }
 
   const relativePath = pathSegments.join("/");
   const fileName = pathSegments[pathSegments.length - 1];
-  const analysisPrefix = buildPrefix({ userId, analysisId });
+  const analysisPrefix = buildPrefix({
+    userId,
+    analysisType,
+    analysisId,
+  });
 
   return {
     userId,
+    analysisType,
     analysisId,
     fileName,
     relativePath,
@@ -654,7 +699,7 @@ function buildSummaries(
   const map = new Map<string, AnalysisResultSummary>();
 
   for (const file of files) {
-    const key = `${file.userId}::${file.analysisId}`;
+    const key = `${file.userId}::${file.analysisType}::${file.analysisId}`;
     const current = map.get(key);
     const size = file.size ?? 0;
 
@@ -670,6 +715,7 @@ function buildSummaries(
     } else {
       map.set(key, {
         userId: file.userId,
+        analysisType: file.analysisType,
         analysisId: file.analysisId,
         prefix: file.analysisPrefix,
         fileCount: 1,
@@ -690,7 +736,7 @@ function buildSummaries(
 }
 
 function matchesSegments(target: string[], segments: string[]): boolean {
-  if (target.length < segments.length + 1) {
+  if (target.length < segments.length) {
     return false;
   }
   for (let index = 0; index < segments.length; index += 1) {
@@ -703,20 +749,41 @@ function matchesSegments(target: string[], segments: string[]): boolean {
 
 function buildPrefix({
   userId,
+  analysisType,
   analysisId,
 }: {
   userId?: string;
+  analysisType?: string;
   analysisId?: string;
 }): string {
   if (!userId) {
     return ANALYSIS_ROOT_PREFIX;
   }
 
-  const parts = [ANALYSIS_BASE_PREFIX, userId, ...ANALYSIS_SEGMENTS];
+  const resolvedType = resolveAnalysisTypeSegment(analysisType);
+  const parts = [
+    ANALYSIS_BASE_PREFIX,
+    userId,
+    ...ANALYSIS_PATH_BASE_SEGMENTS,
+    resolvedType,
+  ];
   if (analysisId) {
     parts.push(analysisId);
   }
   return ensureTrailingSlash(parts.join("/"));
+}
+
+function normalizeAnalysisTypeParam(value?: string | null): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function resolveAnalysisTypeSegment(value?: string | null): string {
+  return normalizeAnalysisTypeParam(value) ?? ANALYSIS_DEFAULT_TYPE_SEGMENT;
 }
 
 function sortAnalysisIdsDescending(values: Iterable<string>): string[] {

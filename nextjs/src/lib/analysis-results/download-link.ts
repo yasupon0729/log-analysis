@@ -1,11 +1,12 @@
 interface DerivedAnalysisIdentifiers {
   userId: string;
   analysisId: string;
+  analysisType: string;
   prefix: string;
 }
 
 const DOWNLOAD_LINK_PATTERN =
-  /product\/user\/(?<userId>\d+)\/analysis_result\/main\/(?<analysisId>\d+)\/.+$/;
+  /product\/user\/(?<userId>\d+)\/analysis_result\/(?<analysisType>[a-zA-Z0-9_-]+)\/(?<analysisId>\d+)\/.+$/i;
 
 function normalizeDownloadLink(raw?: string | null): string | null {
   if (!raw) {
@@ -38,15 +39,21 @@ export function deriveAnalysisIdentifiersFromDownloadLink(
     return null;
   }
 
-  const { userId, analysisId } = match.groups;
-  if (!userId || !analysisId) {
+  const { userId, analysisId, analysisType } = match.groups;
+  if (!userId || !analysisId || !analysisType) {
+    return null;
+  }
+
+  const normalizedType = analysisType.trim().toLowerCase();
+  if (!normalizedType) {
     return null;
   }
 
   return {
     userId,
     analysisId,
-    prefix: `product/user/${userId}/analysis_result/main/${analysisId}/`,
+    analysisType: normalizedType,
+    prefix: `product/user/${userId}/analysis_result/${normalizedType}/${analysisId}/`,
   };
 }
 
