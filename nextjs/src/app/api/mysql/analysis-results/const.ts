@@ -36,8 +36,7 @@ export const ANALYSIS_RESULTS_FROM_CLAUSE = `
   LEFT JOIN accounts_customuser AS acu ON acu.id = iaa.user_id
 `;
 
-export const ANALYSIS_RESULTS_BASE_CONDITION =
-  "iaa.is_deleted = 0 AND iaa.analysis_type = '本解析'";
+export const ANALYSIS_RESULTS_BASE_CONDITION = "iaa.is_deleted = 0";
 
 export const ANALYSIS_RESULTS_DEFAULT_ORDER = `
   ORDER BY iaa.sent_at DESC, iaa.id DESC

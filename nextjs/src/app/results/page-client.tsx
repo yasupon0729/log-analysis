@@ -473,10 +473,7 @@ export default function ResultsPageClient() {
           }
 
           const pageRows = data.rows ?? [];
-          const filteredPageRows = pageRows.filter(
-            (row) => row.analysisType === "本解析",
-          );
-          aggregatedRows = aggregatedRows.concat(filteredPageRows);
+          aggregatedRows = aggregatedRows.concat(pageRows);
 
           const pagination = data.pagination;
           hasMore = pagination ? Boolean(pagination.hasMore) : false;
@@ -586,24 +583,21 @@ export default function ResultsPageClient() {
       }
 
       const pageRows = data.rows ?? [];
-      const filteredPageRows = pageRows.filter(
-        (row) => row.analysisType === "本解析",
-      );
 
       logger.info("Fetched analysis page", {
         component: "ResultsPageClient",
         phase: pageNumber === 1 ? "initial" : "foreground",
         page: pageNumber,
         received: pageRows.length,
-        accumulated: filteredPageRows.length,
+        accumulated: pageRows.length,
         userId: selectedUserId || null,
       });
 
-      return { data, filteredPageRows };
+      return { data, pageRows };
     };
 
     try {
-      const { data, filteredPageRows } = await fetchPage(1, controller.signal);
+      const { data, pageRows } = await fetchPage(1, controller.signal);
 
       if (controller.signal.aborted) {
         return;
@@ -614,8 +608,8 @@ export default function ResultsPageClient() {
         .sort((a, b) => a.localeCompare(b, "ja"));
       setAvailableUsers(usersFromFilters);
 
-      setRows(filteredPageRows);
-      setTotalCount(data.pagination?.totalCount ?? filteredPageRows.length);
+      setRows(pageRows);
+      setTotalCount(data.pagination?.totalCount ?? pageRows.length);
 
       if (
         !hasLoadedOnce &&
@@ -631,8 +625,7 @@ export default function ResultsPageClient() {
 
       const pagination = data.pagination;
       const hasMore = pagination ? Boolean(pagination.hasMore) : false;
-      const expectedTotalCount =
-        data.pagination?.totalCount ?? filteredPageRows.length;
+      const expectedTotalCount = data.pagination?.totalCount ?? pageRows.length;
 
       if (hasMore) {
         setIsHydrating(true);
@@ -641,7 +634,7 @@ export default function ResultsPageClient() {
         void hydrateRemaining({
           baseParamsString,
           startPage: 2,
-          initialRows: filteredPageRows,
+          initialRows: pageRows,
           initialUsers: new Set(usersFromFilters),
           controller: backgroundController,
           expectedTotalCount,
@@ -763,6 +756,20 @@ export default function ResultsPageClient() {
     for (const row of source) {
       if (row.analysisStatus) {
         unique.add(row.analysisStatus);
+      }
+    }
+    return Array.from(unique)
+      .sort((a, b) => a.localeCompare(b, "ja"))
+      .map((value) => ({ label: value, value }));
+  }, [filteredRows, rows, showNonRootOnly]);
+
+  const analysisTypeFilterOptions = useMemo<FilterOption[]>(() => {
+    const source =
+      filteredRows.length > 0 || !showNonRootOnly ? filteredRows : rows;
+    const unique = new Set<string>();
+    for (const row of source) {
+      if (row.analysisType) {
+        unique.add(row.analysisType);
       }
     }
     return Array.from(unique)
@@ -1029,6 +1036,13 @@ export default function ResultsPageClient() {
       filterPlaceholder: "ステータスで絞り込み",
     };
 
+    const analysisTypeMeta: CustomColumnMeta = {
+      cellType: "text",
+      filterVariant: "select",
+      filterOptions: analysisTypeFilterOptions,
+      filterPlaceholder: "解析タイプで絞り込み",
+    };
+
     const columns: ColumnDef<AnalysisResultRow, unknown>[] = [
       {
         id: "userId",
@@ -1067,6 +1081,16 @@ export default function ResultsPageClient() {
         header: "ステータス",
         enableColumnFilter: true,
         meta: statusMeta,
+      },
+      {
+        accessorKey: "analysisType",
+        header: "解析タイプ",
+        enableColumnFilter: true,
+        meta: analysisTypeMeta,
+        cell: (context) => {
+          const value = context.getValue<string | null>();
+          return value && value.trim().length > 0 ? value : "-";
+        },
       },
       {
         accessorKey: "totalCount",
@@ -1236,6 +1260,7 @@ export default function ResultsPageClient() {
     activeDownloads,
     dateFormatter,
     handleDownload,
+    analysisTypeFilterOptions,
     statusFilterOptions,
     userOptions,
   ]);
