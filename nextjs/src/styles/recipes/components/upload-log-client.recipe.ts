@@ -109,17 +109,6 @@ export const uploadDropZoneSubtitleRecipe = cva({
   },
 });
 
-export const uploadErrorAlertRecipe = cva({
-  base: {
-    borderRadius: "md",
-    border: "thin",
-    borderColor: "error.500",
-    backgroundColor: "rgba(220, 38, 38, 0.1)",
-    color: "error.100",
-    padding: 4,
-  },
-});
-
 export const uploadResultSectionRecipe = cva({
   base: {
     display: "flex",

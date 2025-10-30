@@ -24,6 +24,7 @@ import type {
   CustomColumnMeta,
   FilterOption,
 } from "@/components/tanstack-table/types";
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { Button } from "@/components/ui/Button";
 import { deriveAnalysisIdentifiersFromDownloadLink } from "@/lib/analysis-results/download-link";
 import { logger } from "@/lib/logger/client";
@@ -1296,10 +1297,21 @@ export default function ResultsPageClient() {
       </section>
 
       {isHydrating ? (
-        <div className={infoMessageClass}>全データを読み込み中です…</div>
+        <AlertBanner
+          variant="info"
+          description="全データを読み込み中です…"
+          className={bannerMarginClass}
+        />
       ) : null}
 
-      {error ? <div className={errorAlertClass}>エラー: {error}</div> : null}
+      {error ? (
+        <AlertBanner
+          variant="error"
+          title="エラー"
+          description={error}
+          className={bannerMarginClass}
+        />
+      ) : null}
 
       {showEmptyState ? (
         <div className={emptyStateClass}>
@@ -1341,7 +1353,12 @@ export default function ResultsPageClient() {
             </div>
             {selectedAnalysisId ? (
               previewError ? (
-                <div className={errorAlertClass}>エラー: {previewError}</div>
+                <AlertBanner
+                  variant="error"
+                  title="エラー"
+                  description={previewError}
+                  className={bannerMarginClass}
+                />
               ) : previewPairs.length > 0 ? (
                 <div className={previewLaunchContainerClass}>
                   <p className={previewLaunchMessageClass}>
@@ -1730,13 +1747,8 @@ const summaryActionClass = css({
   justifyContent: { base: "flex-start", md: "flex-start" },
 });
 
-const errorAlertClass = css({
-  borderRadius: "md",
-  border: "thin",
-  borderColor: "red.500",
-  backgroundColor: "rgba(239, 68, 68, 0.1)",
-  color: "red.200",
-  padding: 4,
+const bannerMarginClass = css({
+  marginBottom: 4,
 });
 
 const emptyStateClass = css({

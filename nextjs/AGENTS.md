@@ -58,6 +58,11 @@
 - ログは `logger.info("event", { context })` のように構造化オブジェクトで出力。
 - React コンポーネントは PascalCase、ユーティリティやフックは camelCase。
 
+## エラーハンドリング方針
+- サーバー側エラーは `ValidationError` / `ForbiddenError` / `DependencyError` / `UnexpectedError` の分類で返却し、レスポンスは `{ ok: false, code, message, details }` 形式に統一する。
+- フロントエンドでは共通コンポーネント `AlertBanner`（`@/components/ui/AlertBanner`）を使用して通知する。`variant` を切り替えてエラー／警告／情報を表示可能。
+- 詳細な運用手順や背景は `.README/06_エラーハンドリング方針.md` を参照。
+
 ## テスト/検証
 - 自動テストは未整備。機能追加時は手動で `/upload` や S3 連携を検証。
 - 新規テストを追加する場合は `src/` 配下に機能と同階層で配置し、`<feature>.test.ts(x)` 命名。

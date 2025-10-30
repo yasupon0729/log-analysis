@@ -13,12 +13,14 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useId, useMemo, useState, useTransition } from "react";
 
 import { addInboundRuleAction } from "@/app/ec2/security-groups/[groupId]/actions";
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { Button } from "@/components/ui/Button";
 import type {
   SecurityGroupWarning,
   SecurityGroupWithWarnings,
 } from "@/lib/ec2/security-group-warnings";
 import type { SecurityGroupRule } from "@/lib/ec2/security-groups";
+import { css } from "@/styled-system/css";
 import {
   securityGroupDetailBackLinkRecipe,
   securityGroupDetailContainerRecipe,
@@ -33,7 +35,6 @@ import {
   securityGroupDetailFormHelperRowRecipe,
   securityGroupDetailFormInputRecipe,
   securityGroupDetailFormLabelRecipe,
-  securityGroupDetailFormMessageRecipe,
   securityGroupDetailFormSelectRecipe,
   securityGroupDetailHeaderRecipe,
   securityGroupDetailInfoCardRecipe,
@@ -571,24 +572,20 @@ export function SecurityGroupDetail({ group }: Props) {
               />
             </div>
           </div>
-          {errorMessage && (
-            <span
-              className={securityGroupDetailFormMessageRecipe({
-                tone: "error",
-              })}
-            >
-              {errorMessage}
-            </span>
-          )}
-          {successMessage && (
-            <span
-              className={securityGroupDetailFormMessageRecipe({
-                tone: "success",
-              })}
-            >
-              {successMessage}
-            </span>
-          )}
+          {errorMessage ? (
+            <AlertBanner
+              variant="error"
+              description={errorMessage}
+              className={css({ marginTop: 4 })}
+            />
+          ) : null}
+          {!errorMessage && successMessage ? (
+            <AlertBanner
+              variant="success"
+              description={successMessage}
+              className={css({ marginTop: 4 })}
+            />
+          ) : null}
           <div className={securityGroupDetailFormActionsRecipe()}>
             <Button
               type="submit"

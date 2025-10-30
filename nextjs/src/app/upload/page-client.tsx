@@ -7,6 +7,7 @@ import {
   LogDecodeResultView,
   type LogDecodeSource,
 } from "@/components/logs/LogDecodeResultView";
+import { AlertBanner } from "@/components/ui/AlertBanner";
 import { LogFileDropZone } from "@/components/upload/LogFileDropZone";
 import {
   type S3LogEnvironment,
@@ -19,10 +20,7 @@ import {
   SUPPORTED_EXTENSIONS_DESCRIPTION,
   SUPPORTED_FILE_ACCEPT,
 } from "@/lib/logs/file-types";
-import {
-  uploadErrorAlertRecipe,
-  uploadPageContainerRecipe,
-} from "@/styles/recipes/components/upload-log-client.recipe";
+import { uploadPageContainerRecipe } from "@/styles/recipes/components/upload-log-client.recipe";
 
 interface DecodeSuccess {
   ok: true;
@@ -295,9 +293,11 @@ export default function UploadLogClient() {
       <S3LogFetcher isLoading={isLoading} onFetch={fetchFromS3} />
 
       {errorMessage ? (
-        <div className={uploadErrorAlertRecipe()}>
-          <strong>エラー:</strong> {errorMessage}
-        </div>
+        <AlertBanner
+          variant="error"
+          title="エラー"
+          description={errorMessage}
+        />
       ) : null}
 
       {result ? <LogDecodeResultView result={result} /> : null}
