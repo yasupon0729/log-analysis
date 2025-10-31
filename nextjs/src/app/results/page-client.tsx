@@ -1241,6 +1241,13 @@ export default function ResultsPageClient() {
         header: "ユーザー / 企業",
         enableColumnFilter: true,
         enableGlobalFilter: true,
+        filterFn: (row, _columnId, filterValue) => {
+          if (typeof filterValue !== "string" || filterValue.length === 0) {
+            return true;
+          }
+          // セレクト値と一致するユーザーIDだけを残す。
+          return row.original.userId === filterValue;
+        },
         meta: userMeta,
         cell: ({ row }) => {
           const userId = row.original.userId;
