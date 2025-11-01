@@ -41,7 +41,7 @@ interface AnalysisResultRow {
   sentStatus: number;
   analysisStatus: string | null;
   analysisType: string;
-  totalCount: number;
+  completedCount: number;
   analyzerName: string | null;
   downloadLink: string | null;
   imageAnalysisTitle: string | null;
@@ -218,7 +218,7 @@ export default function ResultsPageClient() {
   const [selectedUserId, setSelectedUserId] = useState<string>(userIdParam);
   const [selectedAnalysisId, setSelectedAnalysisId] =
     useState<string>(analysisIdParam);
-  const [totalCount, setTotalCount] = useState(0);
+  const [rowCount, setRowCount] = useState(0);
   const [showNonRootOnly, setShowNonRootOnly] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [shouldAutoOpenModal, setShouldAutoOpenModal] = useState(false);
@@ -399,14 +399,14 @@ export default function ResultsPageClient() {
       initialRows,
       initialUsers,
       controller,
-      expectedTotalCount,
+      expectedRowCount,
     }: {
       baseParamsString: string;
       startPage: number;
       initialRows: AnalysisResultRow[];
       initialUsers: Set<string>;
       controller: AbortController;
-      expectedTotalCount: number;
+      expectedRowCount: number;
     }) => {
       const signal = controller.signal;
       let aggregatedRows = [...initialRows];
@@ -506,7 +506,7 @@ export default function ResultsPageClient() {
         a.localeCompare(b, "ja"),
       );
       setRows(aggregatedRows);
-      setTotalCount(Math.max(expectedTotalCount, aggregatedRows.length));
+      setRowCount(Math.max(expectedRowCount, aggregatedRows.length));
       setAvailableUsers(sortedUsers);
 
       if (selectedUserId && !aggregatedUsers.has(selectedUserId)) {
@@ -584,7 +584,7 @@ export default function ResultsPageClient() {
       setAvailableUsers(usersFromFilters);
 
       setRows(pageRows);
-      setTotalCount(data.pagination?.totalCount ?? pageRows.length);
+      setRowCount(data.pagination?.totalCount ?? pageRows.length);
 
       if (
         !hasLoadedOnce &&
@@ -600,7 +600,7 @@ export default function ResultsPageClient() {
 
       const pagination = data.pagination;
       const hasMore = pagination ? Boolean(pagination.hasMore) : false;
-      const expectedTotalCount = data.pagination?.totalCount ?? pageRows.length;
+      const expectedRowCount = data.pagination?.totalCount ?? pageRows.length;
 
       if (hasMore) {
         setIsHydrating(true);
@@ -612,7 +612,7 @@ export default function ResultsPageClient() {
           initialRows: pageRows,
           initialUsers: new Set(usersFromFilters),
           controller: backgroundController,
-          expectedTotalCount,
+          expectedRowCount,
         });
       } else {
         setIsHydrating(false);
@@ -629,7 +629,7 @@ export default function ResultsPageClient() {
           : "解析結果の取得に失敗しました";
       setError(message);
       setRows([]);
-      setTotalCount(0);
+      setRowCount(0);
       setIsHydrating(false);
       logger.error("Analysis results fetch threw", {
         component: "ResultsPageClient",
@@ -1286,8 +1286,8 @@ export default function ResultsPageClient() {
         },
       },
       {
-        accessorKey: "totalCount",
-        header: "総件数",
+        accessorKey: "completedCount",
+        header: "完了件数",
         enableColumnFilter: false,
         enableGlobalFilter: false,
         cell: (context) => {
@@ -1509,7 +1509,7 @@ export default function ResultsPageClient() {
         <div className={summaryCardClass}>
           <span className={summaryLabelClass}>総件数</span>
           <span className={summaryValueClass}>
-            {totalCount.toLocaleString("ja-JP")}
+            {rowCount.toLocaleString("ja-JP")}
           </span>
         </div>
       </section>
@@ -1541,7 +1541,7 @@ export default function ResultsPageClient() {
             <div className={sectionHeaderClass}>
               <h2 className={sectionTitleClass}>解析概要</h2>
               <span className={sectionCountBadgeClass}>
-                {totalCount.toLocaleString("ja-JP")} 件
+                {rowCount.toLocaleString("ja-JP")} 件
               </span>
             </div>
             <TanstackTable

@@ -4,19 +4,18 @@
  */
 
 import { NextResponse } from "next/server";
-
+import {
+  type AnalysisResultFileEntry,
+  type AnalysisResultSummary,
+  buildAnalysisPrefix,
+  type CollectAnalysisDependencies,
+  collectAnalysisData,
+  compareByTimestampThenKey,
+  normalizeAnalysisTypeParam,
+} from "@/lib/analysis-results/service";
 import { logger } from "@/lib/logger/server";
 import { S3Client } from "@/lib/s3/client";
-import type { S3ObjectSummary } from "@/lib/s3/types";
-import {
-  ANALYSIS_BASE_PREFIX,
-  ANALYSIS_BUCKET,
-  ANALYSIS_DEFAULT_TYPE_SEGMENT,
-  ANALYSIS_PATH_BASE_SEGMENTS,
-  ANALYSIS_REGION,
-  ANALYSIS_ROOT_PREFIX,
-  ensureTrailingSlash,
-} from "./common";
+import { ANALYSIS_BUCKET, ANALYSIS_REGION } from "./common";
 import {
   resolveAnalysisIdsFromDatabase,
   resolveUserIdsFromDatabase,
@@ -57,32 +56,16 @@ type AnalysisCacheValue = {
   files: AnalysisResultFileEntry[];
   analyses: AnalysisResultSummary[];
   hasMore: boolean;
+  totalAnalyses: number;
 };
 
 const analysisCache = new Map<string, CacheEntry<AnalysisCacheValue>>();
 const analysisInflight = new Map<string, Promise<AnalysisCacheValue>>();
 
-interface AnalysisResultFileEntry {
-  userId: string;
-  analysisType: string;
-  analysisId: string;
-  fileName: string;
-  relativePath: string;
-  key: string;
-  analysisPrefix: string;
-  size?: number;
-  lastModified?: string;
-}
-
-interface AnalysisResultSummary {
-  userId: string;
-  analysisType: string;
-  analysisId: string;
-  prefix: string;
-  fileCount: number;
-  totalSize: number;
-  lastModified?: string;
-}
+const analysisDependencies: CollectAnalysisDependencies = {
+  resolveUserIds: resolveUserIdsFromDatabase,
+  resolveAnalysisIdsFromDatabase,
+};
 
 interface AnalysisResultsSuccessResponse {
   ok: true;
@@ -121,7 +104,7 @@ export async function GET(request: Request) {
   const forceRefresh =
     forceRefreshParam === "1" || forceRefreshParam?.toLowerCase() === "true";
 
-  const prefix = buildPrefix({
+  const prefix = buildAnalysisPrefix({
     userId: userIdParam,
     analysisType: analysisTypeParam,
     analysisId: analysisIdParam,
@@ -276,32 +259,6 @@ export async function GET(request: Request) {
   }
 }
 
-async function listAllObjects(prefix: string): Promise<S3ObjectSummary[]> {
-  const accumulated: S3ObjectSummary[] = [];
-  let continuationToken: string | undefined;
-  let page = 0;
-  const startedAt = Date.now();
-
-  do {
-    const { objects, nextContinuationToken } = await s3Client.listObjects({
-      prefix,
-      continuationToken,
-    });
-    accumulated.push(...objects);
-    continuationToken = nextContinuationToken;
-    page += 1;
-  } while (continuationToken);
-
-  analysisLogger.debug("S3 listObjects completed", {
-    prefix,
-    objectCount: accumulated.length,
-    pageCount: page,
-    durationMs: Date.now() - startedAt,
-  });
-
-  return accumulated;
-}
-
 async function getCachedUsers(forceRefresh: boolean): Promise<string[]> {
   if (CACHE_TTL_MS <= 0) {
     return resolveUserIds();
@@ -354,7 +311,7 @@ async function getCachedAnalysisData(
   forceRefresh: boolean,
 ): Promise<AnalysisCacheValue> {
   if (CACHE_TTL_MS <= 0) {
-    return collectAnalysisData(params);
+    return collectAnalysisData(s3Client, params, analysisDependencies);
   }
 
   const cacheKey = buildAnalysisCacheKey(params);
@@ -389,7 +346,7 @@ async function getCachedAnalysisData(
   });
 
   const fetchStartedAt = Date.now();
-  const promise = collectAnalysisData(params)
+  const promise = collectAnalysisData(s3Client, params, analysisDependencies)
     .then((value) => {
       cacheAnalysisValue(cacheKey, value);
       analysisLogger.debug("Fresh analysis data collected", {
@@ -464,7 +421,7 @@ function triggerBackgroundRefresh(
   });
 
   const startedAt = Date.now();
-  const promise = collectAnalysisData(params)
+  const promise = collectAnalysisData(s3Client, params, analysisDependencies)
     .then((value) => {
       cacheAnalysisValue(cacheKey, value);
       analysisLogger.debug("Background refresh completed", {
@@ -489,314 +446,8 @@ function triggerBackgroundRefresh(
   analysisInflight.set(cacheKey, promise);
 }
 
-async function collectAnalysisData({
-  userId,
-  analysisId,
-  analysisType,
-  page,
-  pageSize,
-}: {
-  userId?: string;
-  analysisId?: string;
-  analysisType?: string;
-  page: number;
-  pageSize: number;
-}): Promise<{
-  files: AnalysisResultFileEntry[];
-  analyses: AnalysisResultSummary[];
-  hasMore: boolean;
-}> {
-  // 単一ユーザーの解析 ID をページングし、表示対象分だけ詳細情報を収集する。
-  if (!userId) {
-    return { files: [], analyses: [], hasMore: false };
-  }
-
-  const normalizedAnalysisType = normalizeAnalysisTypeParam(analysisType);
-  const resolvedAnalysisType =
-    normalizedAnalysisType ?? ANALYSIS_DEFAULT_TYPE_SEGMENT;
-
-  const availableUsers = await resolveUserIds(userId);
-  if (!availableUsers.includes(userId)) {
-    analysisLogger.warn("Requested user not found", { userId });
-    return { files: [], analyses: [], hasMore: false };
-  }
-
-  const desiredCount = analysisId ? 1 : pageSize * page + 1;
-  const rawAnalysisIds = analysisId
-    ? [analysisId]
-    : await resolveAnalysisIdsFromDatabase(userId, desiredCount);
-
-  const sortedAnalysisIds = sortAnalysisIdsDescending(rawAnalysisIds);
-
-  let hasMore = false;
-  let targetAnalysisIds = sortedAnalysisIds;
-
-  if (!analysisId) {
-    const startIndex = (page - 1) * pageSize;
-    targetAnalysisIds = sortedAnalysisIds.slice(
-      startIndex,
-      startIndex + pageSize,
-    );
-    hasMore = sortedAnalysisIds.length > page * pageSize;
-  }
-
-  analysisLogger.info("Resolved target analysis IDs", {
-    userId,
-    analysisId,
-    analysisTypeFilter: normalizedAnalysisType ?? null,
-    resolvedAnalysisType,
-    page,
-    pageSize,
-    candidateCount: sortedAnalysisIds.length,
-    targetAnalysisIds,
-    hasMore,
-  });
-
-  const analysisEntries = await Promise.all(
-    targetAnalysisIds.map(async (currentAnalysisId) => {
-      const analysisStartedAt = Date.now();
-      const analysisPrefix = buildPrefix({
-        userId,
-        analysisType: resolvedAnalysisType,
-        analysisId: currentAnalysisId,
-      });
-
-      analysisLogger.info("Listing analysis objects", {
-        userId,
-        analysisId: currentAnalysisId,
-        analysisType: resolvedAnalysisType,
-        analysisPrefix,
-      });
-
-      const objects = await listAllObjects(analysisPrefix);
-      analysisLogger.info("Fetched analysis objects", {
-        userId,
-        analysisId: currentAnalysisId,
-        analysisType: resolvedAnalysisType,
-        count: objects.length,
-        durationMs: Date.now() - analysisStartedAt,
-      });
-
-      const filesForAnalysis: AnalysisResultFileEntry[] = [];
-
-      for (const object of objects) {
-        const parsed = parseAnalysisResultKey(object, {
-          userId,
-          analysisId: currentAnalysisId,
-          analysisType: normalizedAnalysisType,
-        });
-        if (parsed) {
-          filesForAnalysis.push(parsed);
-        }
-      }
-
-      return filesForAnalysis;
-    }),
-  );
-
-  const collectedFiles = analysisEntries.flat();
-
-  collectedFiles.sort((a, b) =>
-    compareByTimestampThenKey(a.lastModified, b.lastModified, a.key, b.key),
-  );
-
-  analysisLogger.debug("Collect analysis data summary", {
-    userId,
-    analysisId,
-    analysisType: resolvedAnalysisType,
-    totalFiles: collectedFiles.length,
-    analysisCount: targetAnalysisIds.length,
-  });
-
-  return {
-    files: collectedFiles,
-    analyses: buildSummaries(collectedFiles),
-    hasMore,
-  };
-}
-
 async function resolveUserIds(expected?: string): Promise<string[]> {
   return resolveUserIdsFromDatabase(expected);
-}
-
-function parseAnalysisResultKey(
-  object: S3ObjectSummary,
-  filters: { userId?: string; analysisId?: string; analysisType?: string },
-): AnalysisResultFileEntry | null {
-  const normalizedKey = object.fullKey.replace(/^\/+/u, "");
-  if (!normalizedKey.startsWith(ANALYSIS_ROOT_PREFIX)) {
-    return null;
-  }
-
-  const relativeToRoot = normalizedKey.slice(ANALYSIS_ROOT_PREFIX.length);
-  const segments = relativeToRoot
-    .split("/")
-    .filter((segment) => segment.length > 0);
-
-  const minimumSegments =
-    1 + ANALYSIS_PATH_BASE_SEGMENTS.length + 2; /* analysisType + analysisId */
-
-  if (segments.length < minimumSegments) {
-    return null;
-  }
-
-  const [userId, ...rest] = segments;
-  if (filters.userId && filters.userId !== userId) {
-    return null;
-  }
-
-  if (!matchesSegments(rest, ANALYSIS_PATH_BASE_SEGMENTS)) {
-    return null;
-  }
-
-  const typeIndex = ANALYSIS_PATH_BASE_SEGMENTS.length;
-  const analysisType = rest[typeIndex]?.toLowerCase();
-  if (!analysisType) {
-    return null;
-  }
-
-  if (filters.analysisType && filters.analysisType !== analysisType) {
-    return null;
-  }
-
-  const analysisId = rest[typeIndex + 1];
-  if (
-    !analysisId ||
-    (filters.analysisId && filters.analysisId !== analysisId)
-  ) {
-    return null;
-  }
-
-  const pathSegments = rest.slice(typeIndex + 2);
-  if (pathSegments.length === 0) {
-    return null;
-  }
-
-  const relativePath = pathSegments.join("/");
-  const fileName = pathSegments[pathSegments.length - 1];
-  const analysisPrefix = buildPrefix({
-    userId,
-    analysisType,
-    analysisId,
-  });
-
-  return {
-    userId,
-    analysisType,
-    analysisId,
-    fileName,
-    relativePath,
-    key: object.fullKey,
-    analysisPrefix,
-    size: object.size,
-    lastModified: object.lastModified,
-  };
-}
-
-function buildSummaries(
-  files: AnalysisResultFileEntry[],
-): AnalysisResultSummary[] {
-  const map = new Map<string, AnalysisResultSummary>();
-
-  for (const file of files) {
-    const key = `${file.userId}::${file.analysisType}::${file.analysisId}`;
-    const current = map.get(key);
-    const size = file.size ?? 0;
-
-    if (current) {
-      current.fileCount += 1;
-      current.totalSize += size;
-      if (
-        file.lastModified &&
-        (!current.lastModified || file.lastModified > current.lastModified)
-      ) {
-        current.lastModified = file.lastModified;
-      }
-    } else {
-      map.set(key, {
-        userId: file.userId,
-        analysisType: file.analysisType,
-        analysisId: file.analysisId,
-        prefix: file.analysisPrefix,
-        fileCount: 1,
-        totalSize: size,
-        lastModified: file.lastModified,
-      });
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) =>
-    compareByTimestampThenKey(
-      a.lastModified,
-      b.lastModified,
-      a.prefix,
-      b.prefix,
-    ),
-  );
-}
-
-function matchesSegments(target: string[], segments: string[]): boolean {
-  if (target.length < segments.length) {
-    return false;
-  }
-  for (let index = 0; index < segments.length; index += 1) {
-    if (target[index] !== segments[index]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function buildPrefix({
-  userId,
-  analysisType,
-  analysisId,
-}: {
-  userId?: string;
-  analysisType?: string;
-  analysisId?: string;
-}): string {
-  if (!userId) {
-    return ANALYSIS_ROOT_PREFIX;
-  }
-
-  const resolvedType = resolveAnalysisTypeSegment(analysisType);
-  const parts = [
-    ANALYSIS_BASE_PREFIX,
-    userId,
-    ...ANALYSIS_PATH_BASE_SEGMENTS,
-    resolvedType,
-  ];
-  if (analysisId) {
-    parts.push(analysisId);
-  }
-  return ensureTrailingSlash(parts.join("/"));
-}
-
-function normalizeAnalysisTypeParam(value?: string | null): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function resolveAnalysisTypeSegment(value?: string | null): string {
-  return normalizeAnalysisTypeParam(value) ?? ANALYSIS_DEFAULT_TYPE_SEGMENT;
-}
-
-function sortAnalysisIdsDescending(values: Iterable<string>): string[] {
-  return Array.from(values)
-    .filter((value) => value && value.length > 0)
-    .sort((a, b) => {
-      const numA = Number.parseInt(a, 10);
-      const numB = Number.parseInt(b, 10);
-      if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) {
-        return numB - numA;
-      }
-      return b.localeCompare(a, "ja");
-    });
 }
 
 function clampInteger(
@@ -816,31 +467,4 @@ function clampInteger(
     return max;
   }
   return parsed;
-}
-
-function compareByTimestampThenKey(
-  aTimestamp: string | undefined,
-  bTimestamp: string | undefined,
-  aKey: string,
-  bKey: string,
-): number {
-  const aTime = aTimestamp ? Date.parse(aTimestamp) : Number.NaN;
-  const bTime = bTimestamp ? Date.parse(bTimestamp) : Number.NaN;
-
-  const aValid = Number.isFinite(aTime);
-  const bValid = Number.isFinite(bTime);
-
-  if (aValid && bValid && aTime !== bTime) {
-    return bTime - aTime;
-  }
-
-  if (aValid && !bValid) {
-    return -1;
-  }
-
-  if (!aValid && bValid) {
-    return 1;
-  }
-
-  return aKey.localeCompare(bKey, "ja");
 }

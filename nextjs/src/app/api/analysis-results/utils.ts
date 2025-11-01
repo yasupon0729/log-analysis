@@ -1,14 +1,10 @@
 import JSZip from "jszip";
 
 import { deriveAnalysisIdentifiersFromDownloadLink } from "@/lib/analysis-results/download-link";
+import { listAllObjects as listAllAnalysisObjects } from "@/lib/analysis-results/service";
 import type { S3Client } from "@/lib/s3/client";
 import type { S3ObjectSummary } from "@/lib/s3/types";
-
-import {
-  ANALYSIS_ROOT_PREFIX,
-  ensureTrailingSlash,
-  normalizePrefix,
-} from "./common";
+import { ANALYSIS_ROOT_PREFIX, ensureTrailingSlash } from "./common";
 
 export interface DownloadTargetInfo {
   normalizedKey: string;
@@ -66,35 +62,7 @@ export function resolveDownloadTarget(
   };
 }
 
-export async function listAllObjects(
-  client: S3Client,
-  prefix: string,
-): Promise<S3ObjectSummary[]> {
-  const results: S3ObjectSummary[] = [];
-  let continuationToken: string | undefined;
-  const normalizedPrefix = normalizePrefix(prefix) ?? "";
-  const resolvedPrefix = normalizedPrefix
-    ? ensureTrailingSlash(normalizedPrefix)
-    : undefined;
-
-  do {
-    const { objects, nextContinuationToken } = await client.listObjects({
-      prefix: resolvedPrefix,
-      continuationToken,
-    });
-
-    for (const object of objects) {
-      if (!object.fullKey || object.fullKey.endsWith("/")) {
-        continue;
-      }
-      results.push(object);
-    }
-
-    continuationToken = nextContinuationToken;
-  } while (continuationToken);
-
-  return results;
-}
+export const listAllObjects = listAllAnalysisObjects;
 
 export async function buildZipFromObjects(
   client: S3Client,

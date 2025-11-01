@@ -178,6 +178,7 @@ spacing: {
    - Table（TanStack Table連携）
    - FilterBar
    - DatePicker
+   - ※ 新規UI（例: `/users` ダッシュボード）はまず `css()` ベースで実装し、再利用性・インタラクションが固まった段階でレシピ化して `src/styles/recipes/` に移行する。
 2. レイアウトコンポーネント
    - Container（ウルトラワイド対応）
    - Grid/Flex ユーティリティ

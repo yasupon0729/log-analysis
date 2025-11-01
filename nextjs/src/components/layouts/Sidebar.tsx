@@ -39,6 +39,7 @@ const navItems: NavItem[] = [
     href: "/ec2/security-groups",
   },
   { id: "logs", label: "ログ", icon: "📝", href: "/upload" },
+  { id: "users", label: "ユーザー動向", icon: "👥", href: "/users" },
   { id: "results", label: "結果", icon: "🔍", href: "/results" },
 
   // 未実装タブは保守のため残しておくが、ナビゲーションには表示しない
