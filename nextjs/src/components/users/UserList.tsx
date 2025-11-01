@@ -1,8 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
+import { CardList } from "@/components/ui/CardList";
 import type { UserOverviewDTO } from "@/lib/users/types";
-import { css, cx } from "@/styled-system/css";
+import { css } from "@/styled-system/css";
 
 interface UserListProps {
   users: UserOverviewDTO[];
@@ -12,62 +13,17 @@ interface UserListProps {
   isRefreshing?: boolean;
 }
 
-const containerClass = css({
+const titleStackClass = css({
   display: "flex",
   flexDirection: "column",
-  gap: 4,
-  height: "100%",
-});
-
-const headerClass = css({
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-});
-
-const titleClass = css({
-  fontSize: "sm",
-  fontWeight: "semibold",
-  color: "text.secondary",
-});
-
-const listClass = css({
-  display: "flex",
-  flexDirection: "column",
-  gap: 3,
-  flex: 1,
-  minHeight: 0,
-  overflowY: "auto",
-  paddingRight: 2,
-});
-
-const itemClass = css({
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "flex-start",
-  gap: 2,
-  border: "thin",
-  borderColor: "border.default",
-  borderRadius: "lg",
-  padding: 4,
-  backgroundColor: "rgba(15, 23, 42, 0.5)",
+  gap: 1,
   textAlign: "left",
-  transition: "background 0.2s ease",
-  cursor: "pointer",
-  _hover: {
-    backgroundColor: "rgba(30, 41, 59, 0.7)",
-  },
-});
-
-const activeItemClass = css({
-  borderColor: "accent.default",
-  boxShadow: "0 0 0 1px rgba(56, 189, 248, 0.4)",
-  backgroundColor: "rgba(30, 64, 175, 0.35)",
 });
 
 const userIdClass = css({
   fontWeight: "semibold",
   color: "text.primary",
+  fontSize: "md",
 });
 
 const companyClass = css({
@@ -75,29 +31,22 @@ const companyClass = css({
   color: "text.secondary",
 });
 
-const metaClass = css({
-  display: "flex",
-  flexWrap: "wrap",
-  gap: 2,
+const metaListClass = css({
+  display: "grid",
+  gap: 1,
   fontSize: "xs",
   color: "text.muted",
+  textAlign: "left",
 });
 
-const badgeClass = css({
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 1,
-  paddingX: 2,
-  paddingY: 1,
-  borderRadius: "full",
-  backgroundColor: "rgba(37, 99, 235, 0.2)",
-  color: "blue.200",
-  fontSize: "xs",
+const emptyStateClass = css({
+  fontSize: "sm",
+  color: "text.muted",
+  padding: 2,
 });
 
-const questionnaireBadgeClass = css({
-  backgroundColor: "rgba(16, 185, 129, 0.2)",
-  color: "green.200",
+const cardListClass = css({
+  height: "100%",
 });
 
 export function UserList({
@@ -108,9 +57,38 @@ export function UserList({
   isRefreshing,
 }: UserListProps) {
   return (
-    <div className={containerClass}>
-      <div className={headerClass}>
-        <span className={titleClass}>ユーザー一覧 ({users.length})</span>
+    <CardList
+      className={cardListClass}
+      items={users}
+      getKey={(item) => item.userId}
+      renderTitle={(item) => (
+        <div className={titleStackClass}>
+          <span className={userIdClass}>{item.userId}</span>
+          {item.companyName ? (
+            <span className={companyClass}>{item.companyName}</span>
+          ) : null}
+        </div>
+      )}
+      renderMeta={(item) => (
+        <dl className={metaListClass}>
+          <div>
+            <dt>解析数</dt>
+            <dd>{item.totalAnalyses.toLocaleString("ja-JP")}</dd>
+          </div>
+          <div>
+            <dt>最終解析</dt>
+            <dd>{formatDateTime(item.latestAnalysisAt)}</dd>
+          </div>
+          <div>
+            <dt>登録日</dt>
+            <dd>{formatDateTime(item.registeredAt)}</dd>
+          </div>
+        </dl>
+      )}
+      headerTitle={
+        <span>{`ユーザー一覧 (${users.length.toLocaleString("ja-JP")})`}</span>
+      }
+      headerActions={
         <Button
           variant="ghost"
           size="sm"
@@ -119,65 +97,18 @@ export function UserList({
         >
           更新
         </Button>
-      </div>
-      <div className={listClass}>
-        {users.map((user) => {
-          const isActive = user.userId === selectedUserId;
-          const topModels = user.modelUsage.slice(0, 2);
-          const companyName = user.companyName ?? null;
-          const latestAnalysisAt = user.latestAnalysisAt
-            ? formatDateTime(user.latestAnalysisAt)
-            : null;
-          const registeredAt = user.registeredAt
-            ? formatDateTime(user.registeredAt)
-            : null;
-          return (
-            <button
-              key={user.userId}
-              type="button"
-              className={cx(itemClass, isActive && activeItemClass)}
-              onClick={() => onSelect(user.userId)}
-            >
-              <span className={userIdClass}>{user.userId}</span>
-              {companyName ? (
-                <span className={companyClass}>{companyName}</span>
-              ) : null}
-              <div className={metaClass}>
-                <span>解析数: {user.totalAnalyses}</span>
-                {latestAnalysisAt ? (
-                  <span>最終解析: {latestAnalysisAt}</span>
-                ) : null}
-                {registeredAt ? <span>登録: {registeredAt}</span> : null}
-              </div>
-              <div className={metaClass}>
-                {topModels.length ? (
-                  topModels.map((model) => (
-                    <span key={model.model} className={badgeClass}>
-                      {model.model}
-                      <span>({model.count.toLocaleString("ja-JP")}枚)</span>
-                    </span>
-                  ))
-                ) : (
-                  <span className={badgeClass}>モデル情報なし</span>
-                )}
-                {user.hasQuestionnaire ? (
-                  <span className={cx(badgeClass, questionnaireBadgeClass)}>
-                    アンケート済
-                  </span>
-                ) : null}
-              </div>
-            </button>
-          );
-        })}
-        {!users.length ? (
-          <p className={metaClass}>ユーザー情報がまだありません。</p>
-        ) : null}
-      </div>
-    </div>
+      }
+      selectedKey={selectedUserId}
+      onSelect={(item) => onSelect(item.userId)}
+      emptyState={<p className={emptyStateClass}>ユーザー情報がありません。</p>}
+    />
   );
 }
 
-function formatDateTime(value: string): string {
+function formatDateTime(value?: string | null): string {
+  if (!value) {
+    return "-";
+  }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;

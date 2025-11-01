@@ -93,18 +93,26 @@ export function UserTrendChart({
               strokeLinecap="round"
             />
             {chart.points.map((point) => (
-              <circle
-                key={point.value.date}
-                cx={point.x}
-                cy={point.y}
-                r={4}
-                fill="#38bdf8"
-                opacity={0.9}
-              >
-                <title>
-                  {`${point.value.date}: ${point.value.analysisCount.toLocaleString("ja-JP")}枚`}
-                </title>
-              </circle>
+              <g key={point.value.date}>
+                <title>{`${point.value.date}: ${point.value.analysisCount.toLocaleString("ja-JP")}枚`}</title>
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={16}
+                  fill="rgba(56, 189, 248, 0.08)"
+                  stroke="rgba(56, 189, 248, 0.3)"
+                  strokeWidth={1.5}
+                  pointerEvents="all"
+                  cursor="pointer"
+                />
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={6}
+                  fill="#38bdf8"
+                  opacity={0.9}
+                />
+              </g>
             ))}
             {chart.labels.map((label) => (
               <text

@@ -11,7 +11,7 @@ export default async function UsersPage() {
     type: "page_load",
   });
 
-  const initialUsers = await getUsersOverview({ limit: 20 });
+  const initialUsers = await getUsersOverview();
 
   return (
     <Suspense fallback={<div>ユーザーデータを読み込み中...</div>}>
