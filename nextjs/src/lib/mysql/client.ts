@@ -31,6 +31,11 @@ function getEnv(name: string): string {
   return value;
 }
 
+function isEnvPresent(name: string): boolean {
+  const value = process.env[name];
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function parsePort(value: string | undefined): number {
   if (!value) {
     return 3306;
@@ -160,4 +165,13 @@ export async function closeMysqlPool(): Promise<void> {
     log.info("MySQLプールをクローズしました");
     pool = null;
   }
+}
+
+export function hasMysqlConfiguration(): boolean {
+  return (
+    isEnvPresent("MYSQL_HOST") &&
+    isEnvPresent("MYSQL_USER") &&
+    isEnvPresent("MYSQL_PASSWORD") &&
+    isEnvPresent("MYSQL_DATABASE")
+  );
 }

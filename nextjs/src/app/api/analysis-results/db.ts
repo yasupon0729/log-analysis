@@ -21,6 +21,21 @@ const USER_PROFILES_QUERY = `
   ORDER BY iaa.user_id ASC
 `;
 
+const USER_OVERVIEW_QUERY = `
+  SELECT
+    iaa.user_id AS userId,
+    COUNT(DISTINCT iaa.image_analysis_id) AS totalAnalyses,
+    MAX(iaa.sent_at) AS latestAnalysisAt,
+    acu.company_name AS companyName,
+    acu.date_joined AS registeredAt
+  FROM image_analysis_analysisdata AS iaa
+  LEFT JOIN accounts_customuser AS acu ON acu.id = iaa.user_id
+  WHERE iaa.is_deleted = 0
+    /** optionalUserIdCondition */
+  GROUP BY iaa.user_id, acu.company_name, acu.date_joined
+  ORDER BY iaa.user_id ASC
+`;
+
 const USER_MONTHLY_COMPLETED_COUNTS_QUERY = `
   SELECT
     DATE_FORMAT(iaa.sent_at, '%Y-%m') AS month,
@@ -69,9 +84,31 @@ const ANALYSIS_IDS_QUERY = `
   LIMIT :limit
 `;
 
+const USER_ANALYSIS_SUMMARIES_QUERY = `
+  SELECT
+    iaa.image_analysis_id AS analysisId,
+    iaa.analysis_type AS analysisType,
+    iaa.sent_at AS sentAt,
+    COALESCE(iaa.completed_count, 0) AS completedCount,
+    COALESCE(iaa.total_count, 0) AS totalCount
+  FROM image_analysis_analysisdata AS iaa
+  WHERE iaa.is_deleted = 0
+    AND iaa.user_id = :userId
+    AND iaa.sent_at IS NOT NULL
+  ORDER BY iaa.sent_at DESC, iaa.image_analysis_id DESC
+  LIMIT :limit
+`;
+
 type UserRow = RowDataPacket & { userId: number | string };
 type UserProfileRow = RowDataPacket & {
   userId: number | string;
+  companyName: string | null;
+  registeredAt: string | null;
+};
+type UserOverviewRow = RowDataPacket & {
+  userId: number | string;
+  totalAnalyses: number | string | null;
+  latestAnalysisAt: string | null;
   companyName: string | null;
   registeredAt: string | null;
 };
@@ -85,6 +122,13 @@ type UserModelCompletionRow = RowDataPacket & {
 };
 type ExistsRow = RowDataPacket;
 type AnalysisRow = RowDataPacket & { analysisId: number | string };
+type UserAnalysisSummaryRow = RowDataPacket & {
+  analysisId: number | string;
+  analysisType: string | null;
+  sentAt: string | null;
+  completedCount: number | string | null;
+  totalCount: number | string | null;
+};
 
 export async function resolveUserIdsFromDatabase(
   expected?: string,
@@ -131,6 +175,34 @@ export async function resolveUserProfilesFromDatabase(
   );
   return rows.map((row) => ({
     userId: row.userId.toString(),
+    companyName: row.companyName,
+    registeredAt: row.registeredAt,
+  }));
+}
+
+export async function resolveUserOverviewsFromDatabase(
+  expected?: string,
+): Promise<
+  Array<{
+    userId: string;
+    totalAnalyses: number;
+    latestAnalysisAt: string | null;
+    companyName: string | null;
+    registeredAt: string | null;
+  }>
+> {
+  const query = USER_OVERVIEW_QUERY.replace(
+    "/** optionalUserIdCondition */",
+    expected ? "AND iaa.user_id = :userId" : "",
+  );
+
+  const params = expected ? { userId: Number(expected) } : undefined;
+  const rows = await selectRows<UserOverviewRow>(query, params);
+
+  return rows.map((row) => ({
+    userId: row.userId.toString(),
+    totalAnalyses: Number(row.totalAnalyses ?? 0),
+    latestAnalysisAt: row.latestAnalysisAt,
     companyName: row.companyName,
     registeredAt: row.registeredAt,
   }));
@@ -192,6 +264,36 @@ export async function resolveUserModelCompletions(
   return rows.map((row) => ({
     modelName: (row.modelName ?? "モデル未設定").trim(),
     completedCount: Number(row.completedCount ?? 0),
+  }));
+}
+
+export async function resolveUserAnalysisSummaries(
+  userId: string,
+  limit = 20,
+): Promise<
+  Array<{
+    analysisId: string;
+    analysisType: string;
+    sentAt: string | null;
+    completedCount: number;
+    totalCount: number;
+  }>
+> {
+  const cappedLimit = Math.max(1, limit);
+  const rows = await selectRows<UserAnalysisSummaryRow>(
+    USER_ANALYSIS_SUMMARIES_QUERY,
+    {
+      userId: Number(userId),
+      limit: cappedLimit,
+    },
+  );
+
+  return rows.map((row) => ({
+    analysisId: row.analysisId.toString(),
+    analysisType: row.analysisType ?? "main",
+    sentAt: row.sentAt,
+    completedCount: Number(row.completedCount ?? 0),
+    totalCount: Number(row.totalCount ?? 0),
   }));
 }
 

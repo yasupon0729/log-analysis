@@ -19,10 +19,10 @@ interface UserInsightsSuccessResponse {
     registeredAt?: string | null;
   };
   analyses: MaterialisedInsights["analyses"];
-  files: MaterialisedInsights["files"];
   timeline: MaterialisedInsights["timeline"];
   modelUsage: MaterialisedInsights["modelUsage"];
   questionnaire: MaterialisedInsights["questionnaire"] | null;
+  questionnaires: MaterialisedInsights["questionnaires"];
 }
 
 interface UserInsightsErrorResponse {
@@ -68,23 +68,23 @@ export async function GET(
       );
     }
 
-    const latestAnalysisAt = insights.analyses[0]?.lastModified;
+    const latestAnalysisAt = insights.analyses[0]?.sentAt;
 
     return NextResponse.json<UserInsightsResponse>({
       ok: true,
       user: {
         userId: insights.userId,
         totalAnalyses: insights.totalAnalyses,
-        latestAnalysisAt,
+        latestAnalysisAt: latestAnalysisAt ?? undefined,
         questionnaireSubmittedAt: insights.questionnaire?.submittedAt,
         companyName: insights.companyName ?? null,
         registeredAt: insights.registeredAt ?? null,
       },
       analyses: insights.analyses,
-      files: insights.files,
       timeline: insights.timeline,
       modelUsage: insights.modelUsage,
       questionnaire: insights.questionnaire ?? null,
+      questionnaires: insights.questionnaires,
     });
   } catch (error) {
     insightsLogger.error("Failed to fetch user insights", { userId, error });

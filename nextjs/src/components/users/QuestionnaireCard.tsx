@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+
 import type { QuestionnaireRecord } from "@/lib/questionnaire/types";
 import { css } from "@/styled-system/css";
 
 interface QuestionnaireCardProps {
-  questionnaire: QuestionnaireRecord | null | undefined;
+  questionnaires: QuestionnaireRecord[];
 }
 
 const cardClass = css({
@@ -49,8 +51,59 @@ const emptyClass = css({
   color: "text.muted",
 });
 
-export function QuestionnaireCard({ questionnaire }: QuestionnaireCardProps) {
-  if (!questionnaire) {
+const selectClass = css({
+  alignSelf: "flex-start",
+  backgroundColor: "rgba(15, 23, 42, 0.6)",
+  border: "thin",
+  borderColor: "border.default",
+  borderRadius: "md",
+  color: "text.primary",
+  paddingX: 3,
+  paddingY: 2,
+  fontSize: "sm",
+  _focusVisible: {
+    outline: "2px solid",
+    outlineColor: "primary.500",
+  },
+});
+
+export function QuestionnaireCard({ questionnaires }: QuestionnaireCardProps) {
+  const preferredVariant = useMemo(() => {
+    return (
+      questionnaires.find((entry) => entry.hasResponses) ??
+      questionnaires[0] ??
+      null
+    );
+  }, [questionnaires]);
+
+  const [activeId, setActiveId] = useState<string | null>(
+    preferredVariant?.variantId ?? null,
+  );
+
+  useEffect(() => {
+    setActiveId((prev) => {
+      if (!questionnaires.length) {
+        return null;
+      }
+      if (prev && questionnaires.some((entry) => entry.variantId === prev)) {
+        return prev;
+      }
+      const nextPreferred =
+        questionnaires.find((entry) => entry.hasResponses)?.variantId ??
+        questionnaires[0]?.variantId ??
+        null;
+      return nextPreferred;
+    });
+  }, [questionnaires]);
+
+  const active = useMemo(() => {
+    if (!activeId) {
+      return null;
+    }
+    return questionnaires.find((entry) => entry.variantId === activeId) ?? null;
+  }, [activeId, questionnaires]);
+
+  if (!active) {
     return (
       <div className={cardClass}>
         <span className={titleClass}>アンケート</span>
@@ -59,14 +112,26 @@ export function QuestionnaireCard({ questionnaire }: QuestionnaireCardProps) {
     );
   }
 
-  const entries = Object.entries(questionnaire.answers ?? {});
+  const entries = Object.entries(active.answers ?? {});
 
   return (
     <div className={cardClass}>
       <span className={titleClass}>アンケート</span>
-      {questionnaire.submittedAt ? (
+      <select
+        className={selectClass}
+        value={active.variantId}
+        onChange={(event) => setActiveId(event.target.value)}
+      >
+        {questionnaires.map((entry) => (
+          <option key={entry.variantId} value={entry.variantId}>
+            {entry.variantLabel}
+            {!entry.hasResponses ? " (未回答)" : ""}
+          </option>
+        ))}
+      </select>
+      {active.submittedAt ? (
         <span className={metaClass}>
-          回答日時: {formatTimestamp(questionnaire.submittedAt)}
+          回答日時: {formatTimestamp(active.submittedAt)}
         </span>
       ) : null}
       {entries.length ? (

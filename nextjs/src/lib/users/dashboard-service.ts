@@ -1,66 +1,54 @@
 "use server";
 
 import {
-  ANALYSIS_BUCKET,
-  ANALYSIS_REGION,
-} from "@/app/api/analysis-results/common";
-import {
-  resolveAnalysisIdsFromDatabase,
-  resolveUserIdsFromDatabase,
+  resolveUserAnalysisSummaries,
   resolveUserModelCompletions,
   resolveUserMonthlyCompletedCounts,
+  resolveUserOverviewsFromDatabase,
   resolveUserProfilesFromDatabase,
 } from "@/app/api/analysis-results/db";
 import {
-  type AnalysisCollectionParams,
-  type AnalysisCollectionResult,
-  type AnalysisResultFileEntry,
-  type AnalysisResultSummary,
   type AnalysisTimelinePoint,
   buildAnalysisPrefix,
-  collectAnalysisData,
   type ModelUsageEntry,
 } from "@/lib/analysis-results/service";
 import { logger } from "@/lib/logger/server";
+import { hasMysqlConfiguration } from "@/lib/mysql/client";
 import { getQuestionnaireClient } from "@/lib/questionnaire/client";
 import type { QuestionnaireRecord } from "@/lib/questionnaire/types";
-import { S3Client } from "@/lib/s3/client";
 
 const dashboardLogger = logger.child({ component: "users-dashboard-service" });
 
-const analysisClient = new S3Client({
-  bucket: ANALYSIS_BUCKET,
-  region: ANALYSIS_REGION,
-});
-
-const analysisDependencies = {
-  resolveUserIds: resolveUserIdsFromDatabase,
-  resolveAnalysisIdsFromDatabase,
-};
-
 const questionnaireClient = getQuestionnaireClient();
 
-const DEFAULT_PAGE_SIZE = 50;
-const LIST_PAGE_SIZE = 10;
+const ANALYSIS_SUMMARY_LIMIT = 20;
 export interface UserOverview {
   userId: string;
   totalAnalyses: number;
   latestAnalysisAt?: string;
-  modelUsage: ModelUsageEntry[];
+  modelUsage?: ModelUsageEntry[];
   questionnaireSubmittedAt?: string;
-  hasQuestionnaire: boolean;
+  hasQuestionnaire?: boolean;
   companyName?: string | null;
   registeredAt?: string | null;
+}
+
+export interface UserAnalysisSummary {
+  analysisId: string;
+  analysisType: string;
+  sentAt?: string | null;
+  completedCount: number;
+  totalCount: number;
 }
 
 export interface UserInsights {
   userId: string;
   totalAnalyses: number;
-  analyses: AnalysisResultSummary[];
-  files: AnalysisResultFileEntry[];
+  analyses: UserAnalysisSummary[];
   timeline: AnalysisTimelinePoint[];
   modelUsage: ModelUsageEntry[];
   questionnaire?: QuestionnaireRecord | null;
+  questionnaires: QuestionnaireRecord[];
   companyName?: string | null;
   registeredAt?: string | null;
 }
@@ -68,44 +56,41 @@ export interface UserInsights {
 export async function getUsersOverview(
   options: { limit?: number } = {},
 ): Promise<UserOverview[]> {
-  const profiles = await resolveUserProfilesFromDatabase();
-  if (!profiles.length) {
+  if (!hasMysqlConfiguration()) {
+    dashboardLogger.warn(
+      "MySQL configuration is missing; returning empty users overview",
+    );
+    return [];
+  }
+
+  const overviews = await resolveUserOverviewsFromDatabase();
+  if (!overviews.length) {
     return [];
   }
 
   const limit =
-    options.limit && options.limit > 0 ? options.limit : profiles.length;
-  const targets = profiles.slice(0, limit);
+    options.limit && options.limit > 0 ? options.limit : overviews.length;
+  const targets = overviews.slice(0, limit);
 
-  const results: UserOverview[] = [];
+  const results: UserOverview[] = targets.map((entry) => {
+    const latestAnalysisAt = normalizeDate(entry.latestAnalysisAt);
+    const registeredAt = normalizeDate(entry.registeredAt);
 
-  for (const profile of targets) {
-    const { userId, companyName = null, registeredAt = null } = profile;
-    const analysis = await fetchAnalysisData({
-      userId,
-      page: 1,
-      pageSize: LIST_PAGE_SIZE,
-    });
+    const overview: UserOverview = {
+      userId: entry.userId,
+      totalAnalyses: entry.totalAnalyses,
+      companyName: entry.companyName ?? null,
+    };
 
-    const modelUsage = await resolveUserModelCompletions(userId, 12, 3);
+    if (latestAnalysisAt) {
+      overview.latestAnalysisAt = latestAnalysisAt;
+    }
+    if (registeredAt) {
+      overview.registeredAt = registeredAt;
+    }
 
-    const questionnaire = await questionnaireClient.getAnswers(userId);
-    const latestAnalysisAt = analysis.analyses[0]?.lastModified;
-
-    results.push({
-      userId,
-      totalAnalyses: analysis.totalAnalyses,
-      latestAnalysisAt,
-      modelUsage: modelUsage.map((entry) => ({
-        model: entry.modelName,
-        count: entry.completedCount,
-      })),
-      questionnaireSubmittedAt: questionnaire?.submittedAt,
-      hasQuestionnaire: Boolean(questionnaire),
-      companyName,
-      registeredAt,
-    });
-  }
+    return overview;
+  });
 
   return results.sort((a, b) => {
     if (a.latestAnalysisAt && b.latestAnalysisAt) {
@@ -129,66 +114,92 @@ export async function getUserInsights(
     return null;
   }
 
-  const [profile] = await resolveUserProfilesFromDatabase(userId);
-  const companyName = profile?.companyName ?? null;
-  const registeredAt = profile?.registeredAt ?? null;
+  if (!hasMysqlConfiguration()) {
+    dashboardLogger.warn(
+      "MySQL configuration is missing; returning empty insights",
+      {
+        userId,
+      },
+    );
+    const timeline = buildMonthlyTimeline([]);
+    const questionnaires = await questionnaireClient.getAllAnswers(userId);
+    const primaryQuestionnaire =
+      questionnaires.find((entry) => entry.hasResponses) ?? null;
 
-  const pageSize =
-    options.pageSize && options.pageSize > 0
-      ? options.pageSize
-      : DEFAULT_PAGE_SIZE;
-  const analysis = await fetchAnalysisData({
-    userId,
-    page: 1,
-    pageSize,
-  });
-  const monthlyCounts = await resolveUserMonthlyCompletedCounts(userId);
-  const timeline = buildMonthlyTimeline(monthlyCounts);
-
-  if (!analysis.totalAnalyses) {
-    const questionnaire = await questionnaireClient.getAnswers(userId);
     return {
       userId,
       totalAnalyses: 0,
       analyses: [],
-      files: [],
       timeline,
       modelUsage: [],
-      questionnaire,
+      questionnaire: primaryQuestionnaire,
+      questionnaires,
+      companyName: null,
+      registeredAt: null,
+    };
+  }
+
+  const [overview] = await resolveUserOverviewsFromDatabase(userId);
+  let companyName = overview?.companyName ?? null;
+  let registeredAt = normalizeDate(overview?.registeredAt) ?? null;
+  const totalAnalyses = overview?.totalAnalyses ?? 0;
+
+  if (!overview) {
+    const [profile] = await resolveUserProfilesFromDatabase(userId);
+    companyName = profile?.companyName ?? null;
+    registeredAt = normalizeDate(profile?.registeredAt) ?? null;
+  }
+
+  const limit =
+    options.pageSize && options.pageSize > 0
+      ? options.pageSize
+      : ANALYSIS_SUMMARY_LIMIT;
+  const summaries = await resolveUserAnalysisSummaries(userId, limit);
+  const monthlyCounts = await resolveUserMonthlyCompletedCounts(userId);
+  const timeline = buildMonthlyTimeline(monthlyCounts);
+
+  if (!totalAnalyses) {
+    const questionnaires = await questionnaireClient.getAllAnswers(userId);
+    const primaryQuestionnaire =
+      questionnaires.find((entry) => entry.hasResponses) ?? null;
+    return {
+      userId,
+      totalAnalyses: 0,
+      analyses: [],
+      timeline,
+      modelUsage: [],
+      questionnaire: primaryQuestionnaire,
+      questionnaires,
       companyName,
       registeredAt,
     };
   }
 
   const modelUsage = await resolveUserModelCompletions(userId);
-  const questionnaire = await questionnaireClient.getAnswers(userId);
+  const questionnaires = await questionnaireClient.getAllAnswers(userId);
+  const primaryQuestionnaire =
+    questionnaires.find((entry) => entry.hasResponses) ?? null;
 
   return {
     userId,
-    totalAnalyses: analysis.totalAnalyses,
-    analyses: analysis.analyses,
-    files: analysis.files,
+    totalAnalyses,
+    analyses: summaries.map((summary) => ({
+      analysisId: summary.analysisId,
+      analysisType: summary.analysisType,
+      completedCount: summary.completedCount,
+      totalCount: summary.totalCount,
+      sentAt: normalizeDate(summary.sentAt),
+    })),
     timeline,
     modelUsage: modelUsage.map((entry) => ({
       model: entry.modelName,
       count: entry.completedCount,
     })),
-    questionnaire,
+    questionnaire: primaryQuestionnaire,
+    questionnaires,
     companyName,
     registeredAt,
   };
-}
-
-async function fetchAnalysisData(
-  params: AnalysisCollectionParams,
-): Promise<AnalysisCollectionResult> {
-  dashboardLogger.info("Fetching analysis data for dashboard", {
-    userId: params.userId,
-    page: params.page,
-    pageSize: params.pageSize,
-  });
-
-  return collectAnalysisData(analysisClient, params, analysisDependencies);
 }
 
 export async function resolveAnalysisPrefix(
@@ -232,4 +243,14 @@ function buildMonthlyTimeline(
   }
 
   return timeline;
+}
+
+function normalizeDate(value?: string | Date | null): string | null {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return value;
 }

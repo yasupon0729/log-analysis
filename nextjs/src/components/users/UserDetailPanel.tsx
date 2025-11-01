@@ -235,8 +235,8 @@ export function UserDetailPanel({
         <div className={statCardClass}>
           <span className={statLabelClass}>直近の解析日時</span>
           <span className={statValueClass}>
-            {latestAnalysis?.lastModified
-              ? new Date(latestAnalysis.lastModified).toLocaleString("ja-JP")
+            {latestAnalysis?.sentAt
+              ? new Date(latestAnalysis.sentAt).toLocaleString("ja-JP")
               : "-"}
           </span>
         </div>
@@ -267,14 +267,18 @@ export function UserDetailPanel({
                     {analysis.analysisType} / {analysis.analysisId}
                   </strong>
                   <div className={analysisMetaClass}>
-                    <span>ファイル数: {analysis.fileCount}</span>
-                    <span>合計サイズ: {formatBytes(analysis.totalSize)}</span>
-                    {analysis.lastModified ? (
+                    <span>
+                      解析枚数:{" "}
+                      {analysis.completedCount.toLocaleString("ja-JP")}
+                    </span>
+                    <span>
+                      解析対象:{" "}
+                      {analysis.totalCount.toLocaleString("ja-JP")}
+                    </span>
+                    {analysis.sentAt ? (
                       <span>
-                        更新:{" "}
-                        {new Date(analysis.lastModified).toLocaleString(
-                          "ja-JP",
-                        )}
+                        解析日時:{" "}
+                        {new Date(analysis.sentAt).toLocaleString("ja-JP")}
                       </span>
                     ) : null}
                   </div>
@@ -300,25 +304,12 @@ export function UserDetailPanel({
             <p className={emptyMessageClass}>解析枚数の情報がありません。</p>
           )}
         </div>
-        <QuestionnaireCard questionnaire={insights.questionnaire} />
+        <QuestionnaireCard questionnaires={insights.questionnaires ?? []} />
       </section>
 
       <UserTrendChart data={insights.timeline} />
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "0B";
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"] as const;
-  const index = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = bytes / 1024 ** index;
-  return `${value.toFixed(1)}${units[index]}`;
 }
 
 function formatTimestamp(timestamp: string): string {

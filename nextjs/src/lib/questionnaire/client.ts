@@ -20,17 +20,15 @@ const QUESTIONNAIRE_REGION =
   process.env.AWS_REGION ||
   "ap-northeast-1";
 
-const QUESTIONNAIRE_BASE_PREFIX = normalizePath(
+const BASE_PREFIX = normalizePath(
   process.env.S3_QUESTIONNAIRE_BASE_PREFIX || "product/user",
 );
 
-const QUESTIONNAIRE_SEGMENT = normalizePath(
+const DEFAULT_GEXEL_SEGMENT = normalizePath(
   process.env.S3_QUESTIONNAIRE_PATH_SEGMENT || "questionnaire/gexel",
 );
 
-const QUESTIONNAIRE_FILENAME = (
-  process.env.S3_QUESTIONNAIRE_OBJECT_KEY || "answers.json"
-).trim();
+const DEFAULT_QUESTION_FILENAME = "answers.json";
 
 const GEXEL_HEADER_MAP: Record<string, string> = {
   q1: "1. GeXeLを知ったきっかけを教えてください",
@@ -47,6 +45,40 @@ const GEXEL_HEADER_MAP: Record<string, string> = {
   q6: "6. 社内の他のチームや部署では、画像解析でどのようなお困りごとがありますか。",
 };
 
+const PI_HEADER_MAP: Record<string, string> = {
+  q1: "1. 該当する分野に近いものを1つお選びください。",
+  q2: "2. お立場に最も近いものを1つお選びください。",
+  q3: "3. サービスの利用目的・解決したい課題は何ですか？",
+  q4: "4. 現在お使いの要因解析／シミュレーションの方法やツール、抱えている不満点があれば教えてください。",
+  q5: "5. AI の導き出す結果を業務利用する際、信頼する基準を教えてください。",
+  q6: "6. 導入を検討する際に最も重視するポイントと、おおよその許容価格帯があればご記入ください。",
+};
+
+interface QuestionnaireVariant {
+  id: string;
+  label: string;
+  segment: string;
+  filenames: string[];
+  headerMap: Record<string, string>;
+}
+
+const QUESTIONNAIRE_VARIANTS: QuestionnaireVariant[] = [
+  {
+    id: "gexel",
+    label: "GeXeL アンケート",
+    segment: DEFAULT_GEXEL_SEGMENT,
+    filenames: [DEFAULT_QUESTION_FILENAME],
+    headerMap: GEXEL_HEADER_MAP,
+  },
+  {
+    id: "pi",
+    label: "PI アンケート",
+    segment: normalizePath("questionnaire/pi"),
+    filenames: [DEFAULT_QUESTION_FILENAME],
+    headerMap: PI_HEADER_MAP,
+  },
+];
+
 export class QuestionnaireClient {
   private readonly s3Client: S3Client;
   private readonly logger = questionnaireLogger;
@@ -61,38 +93,89 @@ export class QuestionnaireClient {
   }
 
   async getAnswers(userId: string): Promise<QuestionnaireRecord | null> {
+    const all = await this.getAllAnswers(userId);
+    return all.find((entry) => entry.hasResponses) ?? null;
+  }
+
+  async getAllAnswers(userId: string): Promise<QuestionnaireRecord[]> {
     if (!userId) {
-      return null;
+      return [];
     }
 
-    const key = buildQuestionnaireKey(userId);
-    try {
-      const object = await this.s3Client.getObject({ key });
-      const text = object.body.toString("utf8");
-      const parsed = safeParseJson(text);
-      const normalised = normaliseAnswers(parsed);
+    const results: QuestionnaireRecord[] = [];
 
-      return {
-        userId,
-        key,
-        submittedAt: normalised.submittedAt ?? object.lastModified,
-        lastModified: object.lastModified,
-        answers: normalised.answers,
-        raw: parsed,
-      };
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        this.logger.debug("Questionnaire not found", { userId, key });
-        return null;
+    for (const variant of QUESTIONNAIRE_VARIANTS) {
+      const record = await this.fetchVariant(userId, variant);
+      if (record) {
+        results.push(record);
       }
-
-      this.logger.error("Failed to fetch questionnaire", {
-        userId,
-        key,
-        error,
-      });
-      throw error;
     }
+
+    return results;
+  }
+
+  private async fetchVariant(
+    userId: string,
+    variant: QuestionnaireVariant,
+  ): Promise<QuestionnaireRecord | null> {
+    for (const filename of variant.filenames) {
+      const key = buildQuestionnaireKey(userId, variant, filename);
+      try {
+        const object = await this.s3Client.getObject({ key });
+        const text = object.body.toString("utf8");
+        const parsed = safeParseJson(text);
+        const normalised = normaliseAnswersWithMap(parsed, variant.headerMap);
+        const hasResponses = Object.keys(normalised.answers).length > 0;
+
+        return {
+          variantId: variant.id,
+          variantLabel: variant.label,
+          userId,
+          key,
+          submittedAt: normalised.submittedAt ?? object.lastModified,
+          lastModified: object.lastModified,
+          answers: normalised.answers,
+          raw: parsed,
+          hasResponses,
+        } satisfies QuestionnaireRecord;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          continue;
+        }
+
+        this.logger.error("Failed to fetch questionnaire", {
+          userId,
+          key,
+          variant: variant.id,
+          error,
+        });
+        throw error;
+      }
+    }
+
+    const fallbackKey = buildQuestionnaireKey(
+      userId,
+      variant,
+      variant.filenames[0],
+    );
+
+    this.logger.debug("Questionnaire variant not found", {
+      userId,
+      variant: variant.id,
+      key: fallbackKey,
+    });
+
+    return {
+      variantId: variant.id,
+      variantLabel: variant.label,
+      userId,
+      key: fallbackKey,
+      submittedAt: undefined,
+      lastModified: undefined,
+      answers: {},
+      raw: null,
+      hasResponses: false,
+    } satisfies QuestionnaireRecord;
   }
 }
 
@@ -105,20 +188,27 @@ export function getQuestionnaireClient(): QuestionnaireClient {
   return questionnaireClientInstance;
 }
 
-function buildQuestionnaireKey(userId: string): string {
+function buildQuestionnaireKey(
+  userId: string,
+  variant: QuestionnaireVariant,
+  filename: string,
+): string {
   const segments: string[] = [];
-  if (QUESTIONNAIRE_BASE_PREFIX) {
-    segments.push(QUESTIONNAIRE_BASE_PREFIX);
+  if (BASE_PREFIX) {
+    segments.push(BASE_PREFIX);
   }
   segments.push(userId);
-  if (QUESTIONNAIRE_SEGMENT) {
-    segments.push(QUESTIONNAIRE_SEGMENT);
+  if (variant.segment) {
+    segments.push(variant.segment);
   }
-  segments.push(QUESTIONNAIRE_FILENAME);
+  segments.push(filename);
   return segments.join("/");
 }
 
-function normaliseAnswers(payload: unknown): {
+function normaliseAnswersWithMap(
+  payload: unknown,
+  headerMap: Record<string, string>,
+): {
   submittedAt?: string;
   answers: Record<string, unknown>;
 } {
@@ -143,7 +233,7 @@ function normaliseAnswers(payload: unknown): {
 
   const submittedAt = pickTimestamp(record);
 
-  return { answers: applyHeaderMap(answers), submittedAt };
+  return { answers: applyHeaderMap(answers, headerMap), submittedAt };
 }
 
 const METADATA_KEYS = new Set([
@@ -176,10 +266,11 @@ function convertToRecord(value: unknown): Record<string, unknown> {
 
 function applyHeaderMap(
   answers: Record<string, unknown>,
+  headerMap: Record<string, string>,
 ): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(answers)) {
-    const header = GEXEL_HEADER_MAP[key] ?? key;
+    const header = headerMap[key] ?? key;
     mapped[header] = value;
   }
   return mapped;

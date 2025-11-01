@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AlertBanner } from "@/components/ui/AlertBanner";
 import { UserDetailPanel } from "@/components/users/UserDetailPanel";
@@ -111,10 +111,8 @@ const inputClass = css({
 export default function UsersPageClient({
   initialUsers,
 }: UsersPageClientProps) {
-  const [users, setUsers] = useState<UserOverviewDTO[]>(initialUsers);
-  const [selectedUserId, setSelectedUserId] = useState<string>(
-    initialUsers[0]?.userId ?? "",
-  );
+  const [users, setUsers] = useState<UserOverviewDTO[]>(() => initialUsers);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [usersError, setUsersError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("latest-desc");
@@ -138,7 +136,6 @@ export default function UsersPageClient({
       return;
     }
     if (!selectedUserId) {
-      setSelectedUserId(filteredUsers[0].userId);
       return;
     }
     if (!filteredUsers.some((user) => user.userId === selectedUserId)) {
@@ -200,36 +197,86 @@ export default function UsersPageClient({
     [users, selectedUserId],
   );
 
-  const handleRefreshUsers = async () => {
-    setIsRefreshing(true);
-    setUsersError(null);
-    try {
-      const response = await fetch("/api/users");
-      const data = (await response.json()) as UsersOverviewResponse;
-      if (!data.ok) {
-        setUsersError((data as ApiErrorResponse).message);
+  const refreshUsers = useCallback(
+    async (
+      options: { preserveSelection?: boolean; silent?: boolean } = {},
+    ) => {
+      const { preserveSelection = true, silent = false } = options;
+      const previousSelectedUserId = selectedUserId;
+
+      if (!silent) {
+        setIsRefreshing(true);
+      }
+      setUsersError(null);
+
+      try {
+        const response = await fetch("/api/users");
+        const data = (await response.json()) as UsersOverviewResponse;
+        if (!data.ok) {
+          setUsersError((data as ApiErrorResponse).message);
+          return;
+        }
+
+        setUsers(data.users);
+
+        if (!data.users.length) {
+          if (selectedUserId) {
+            setSelectedUserId("");
+            setInsights(null);
+          }
+          return;
+        }
+
+        if (!preserveSelection) {
+          return;
+        }
+
+        if (previousSelectedUserId) {
+          const stillExists = data.users.some(
+            (user) => user.userId === previousSelectedUserId,
+          );
+          if (!stillExists) {
+            setSelectedUserId("");
+            setInsights(null);
+          }
+        }
+      } catch (error) {
+        setUsersError(
+          error instanceof Error
+            ? error.message
+            : "ユーザー一覧の取得に失敗しました",
+        );
+      } finally {
+        if (!silent) {
+          setIsRefreshing(false);
+        }
+      }
+    },
+    [selectedUserId],
+  );
+
+  const handleRefreshUsers = useCallback(() => {
+    void refreshUsers({ preserveSelection: true, silent: false });
+  }, [refreshUsers]);
+
+  const hasInitializedRef = useRef(false);
+
+  useEffect(() => {
+    if (!hasInitializedRef.current) {
+      if (initialUsers.length) {
+        setUsers(initialUsers);
+        hasInitializedRef.current = true;
         return;
       }
-      setUsers(data.users);
-      if (data.users.length) {
-        if (!data.users.some((user) => user.userId === selectedUserId)) {
-          setSelectedUserId(data.users[0].userId);
-          setInsightsRequestKey((value) => value + 1);
-        }
-      } else {
-        setSelectedUserId("");
-        setInsights(null);
-      }
-    } catch (error) {
-      setUsersError(
-        error instanceof Error
-          ? error.message
-          : "ユーザー一覧の取得に失敗しました",
-      );
-    } finally {
-      setIsRefreshing(false);
+      hasInitializedRef.current = true;
+      void refreshUsers({ preserveSelection: false, silent: true });
+      return;
     }
-  };
+
+    if (initialUsers.length) {
+      setUsers(initialUsers);
+    }
+  }, [initialUsers, refreshUsers]);
 
   const handleRetryInsights = () => {
     setInsightsRequestKey((value) => value + 1);

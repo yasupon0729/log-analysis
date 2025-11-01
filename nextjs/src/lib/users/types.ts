@@ -1,18 +1,13 @@
-import type {
-  AnalysisResultFileEntry,
-  AnalysisResultSummary,
-  AnalysisTimelinePoint,
-  ModelUsageEntry,
-} from "@/lib/analysis-results/service";
+import type { AnalysisTimelinePoint, ModelUsageEntry } from "@/lib/analysis-results/service";
 import type { QuestionnaireRecord } from "@/lib/questionnaire/types";
 
 export interface UserOverviewDTO {
   userId: string;
   totalAnalyses: number;
   latestAnalysisAt?: string;
-  modelUsage: ModelUsageEntry[];
-  questionnaireSubmittedAt?: string;
-  hasQuestionnaire: boolean;
+  modelUsage?: ModelUsageEntry[];
+  questionnaireSubmittedAt?: string | null;
+  hasQuestionnaire?: boolean;
   companyName?: string | null;
   registeredAt?: string | null;
 }
@@ -35,11 +30,11 @@ export interface UserInsightsDTO {
     companyName?: string | null;
     registeredAt?: string | null;
   };
-  analyses: AnalysisResultSummary[];
-  files: AnalysisResultFileEntry[];
+  analyses: UserAnalysisSummaryDTO[];
   timeline: AnalysisTimelinePoint[];
   modelUsage: ModelUsageEntry[];
   questionnaire: QuestionnaireRecord | null;
+  questionnaires: QuestionnaireRecord[];
 }
 
 export interface ApiErrorResponse {
@@ -51,3 +46,11 @@ export interface ApiErrorResponse {
 
 export type UsersOverviewResponse = UsersOverviewApiResponse | ApiErrorResponse;
 export type UserInsightsResponse = UserInsightsDTO | ApiErrorResponse;
+
+export interface UserAnalysisSummaryDTO {
+  analysisId: string;
+  analysisType: string;
+  sentAt?: string | null;
+  completedCount: number;
+  totalCount: number;
+}
