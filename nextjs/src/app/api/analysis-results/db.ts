@@ -5,7 +5,6 @@ import { selectRows } from "@/lib/mysql/client";
 const USER_IDS_QUERY = `
   SELECT DISTINCT iaa.user_id AS userId
   FROM image_analysis_analysisdata AS iaa
-  WHERE iaa.is_deleted = 0
   ORDER BY iaa.user_id ASC
 `;
 
@@ -16,7 +15,7 @@ const USER_PROFILES_QUERY = `
     acu.date_joined AS registeredAt
   FROM image_analysis_analysisdata AS iaa
   LEFT JOIN accounts_customuser AS acu ON acu.id = iaa.user_id
-  WHERE iaa.is_deleted = 0
+  WHERE 1 = 1
     /** optionalUserIdCondition */
   ORDER BY iaa.user_id ASC
 `;
@@ -30,7 +29,7 @@ const USER_OVERVIEW_QUERY = `
     acu.date_joined AS registeredAt
   FROM image_analysis_analysisdata AS iaa
   LEFT JOIN accounts_customuser AS acu ON acu.id = iaa.user_id
-  WHERE iaa.is_deleted = 0
+  WHERE 1 = 1
     /** optionalUserIdCondition */
   GROUP BY iaa.user_id, acu.company_name, acu.date_joined
   ORDER BY iaa.user_id ASC
@@ -41,8 +40,7 @@ const USER_MONTHLY_COMPLETED_COUNTS_QUERY = `
     DATE_FORMAT(iaa.sent_at, '%Y-%m') AS month,
     COALESCE(SUM(iaa.completed_count), 0) AS completedCount
   FROM image_analysis_analysisdata AS iaa
-  WHERE iaa.is_deleted = 0
-    AND iaa.user_id = :userId
+  WHERE iaa.user_id = :userId
     AND iaa.sent_at IS NOT NULL
     AND iaa.sent_at >= :startDate
   GROUP BY month
@@ -58,8 +56,7 @@ const USER_MODEL_COMPLETIONS_QUERY = `
     ON iai.id = iaa.image_analysis_id
   LEFT JOIN image_analysis_aimodel AS iam
     ON iam.id = iai.ai_model_id
-  WHERE iaa.is_deleted = 0
-    AND iaa.user_id = :userId
+  WHERE iaa.user_id = :userId
     AND iaa.sent_at IS NOT NULL
     AND iaa.sent_at >= :startDate
   GROUP BY modelName
@@ -70,16 +67,14 @@ const USER_MODEL_COMPLETIONS_QUERY = `
 const USER_EXISTS_QUERY = `
   SELECT 1
   FROM image_analysis_analysisdata AS iaa
-  WHERE iaa.is_deleted = 0
-    AND iaa.user_id = :userId
+  WHERE iaa.user_id = :userId
   LIMIT 1
 `;
 
 const ANALYSIS_IDS_QUERY = `
   SELECT DISTINCT iaa.image_analysis_id AS analysisId
   FROM image_analysis_analysisdata AS iaa
-  WHERE iaa.is_deleted = 0
-    AND iaa.user_id = :userId
+  WHERE iaa.user_id = :userId
   ORDER BY iaa.image_analysis_id DESC
   LIMIT :limit
 `;
@@ -92,8 +87,7 @@ const USER_ANALYSIS_SUMMARIES_QUERY = `
     COALESCE(iaa.completed_count, 0) AS completedCount,
     COALESCE(iaa.total_count, 0) AS totalCount
   FROM image_analysis_analysisdata AS iaa
-  WHERE iaa.is_deleted = 0
-    AND iaa.user_id = :userId
+  WHERE iaa.user_id = :userId
     AND iaa.sent_at IS NOT NULL
   ORDER BY iaa.sent_at DESC, iaa.image_analysis_id DESC
   LIMIT :limit
