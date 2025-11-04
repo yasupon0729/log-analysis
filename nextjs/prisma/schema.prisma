@@ -16,12 +16,15 @@ datasource db {
 
 model JudgeImage {
   id               String   @id @default(uuid())
+  userId           String //ユーザーID
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-  analysisId       String
-  originalImageUrl String
-  maskImageUrl     String
+  analysisId       String //解析ID
+  originalImageUrl String //元画像URL
+  maskImageUrl     String //マスク画像URL
   isExcel          Boolean  @default(false)
-  point            Int?
-  note             String?
+  point            Int? //点数(0~100)
+  note             String? //備考
+
+  @@index([userId, analysisId, maskImageUrl])
 }
