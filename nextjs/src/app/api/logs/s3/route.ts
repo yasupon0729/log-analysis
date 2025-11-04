@@ -23,7 +23,7 @@ const DEFAULT_ENVIRONMENT: S3Environment = "staging";
 
 const ENVIRONMENT_PREFIXES: Record<S3Environment, string> = {
   staging: process.env.S3_STAGING_PREFIX || "staging/backup/logs",
-  production: process.env.S3_PRODUCTION_PREFIX || "backup/logs",
+  production: process.env.S3_PRODUCTION_PREFIX || "product/backup/logs",
 };
 
 const s3Client = new S3Client({

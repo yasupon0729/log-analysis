@@ -98,8 +98,8 @@ export function S3LogFetcher({ isLoading, onFetch }: S3LogFetcherProps) {
               setEnvironment(event.target.value as S3LogEnvironment)
             }
           >
-            <option value="staging">ステージング</option>
             <option value="production">本番</option>
+            <option value="staging">ステージング</option>
           </select>
         </label>
         <Button type="submit" disabled={isLoading}>
