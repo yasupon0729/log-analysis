@@ -198,9 +198,7 @@ export default function UsersPageClient({
   );
 
   const refreshUsers = useCallback(
-    async (
-      options: { preserveSelection?: boolean; silent?: boolean } = {},
-    ) => {
+    async (options: { preserveSelection?: boolean; silent?: boolean } = {}) => {
       const { preserveSelection = true, silent = false } = options;
       const previousSelectedUserId = selectedUserId;
 

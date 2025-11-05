@@ -6,6 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -26,5 +27,6 @@ model JudgeImage {
   point            Int? //点数(0~100)
   note             String? //備考
 
-  @@index([userId, analysisId, maskImageUrl])
+  @@index([userId, analysisId])
+  @@unique([userId, analysisId, originalImageUrl])
 }

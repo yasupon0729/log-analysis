@@ -1,4 +1,7 @@
-import type { AnalysisTimelinePoint, ModelUsageEntry } from "@/lib/analysis-results/service";
+import type {
+  AnalysisTimelinePoint,
+  ModelUsageEntry,
+} from "@/lib/analysis-results/service";
 import type { QuestionnaireRecord } from "@/lib/questionnaire/types";
 
 export interface UserOverviewDTO {

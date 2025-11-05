@@ -272,8 +272,7 @@ export function UserDetailPanel({
                       {analysis.completedCount.toLocaleString("ja-JP")}
                     </span>
                     <span>
-                      解析対象:{" "}
-                      {analysis.totalCount.toLocaleString("ja-JP")}
+                      解析対象: {analysis.totalCount.toLocaleString("ja-JP")}
                     </span>
                     {analysis.sentAt ? (
                       <span>
