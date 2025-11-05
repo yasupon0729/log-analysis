@@ -923,8 +923,11 @@ export default function ResultsPageClient({
         }
 
         const derived = deriveAnalysisIdentifiersFromDownloadLink(downloadKey);
+        const workbookPrefix = downloadKey
+          ? addTrailingSlash(downloadKey)
+          : derived?.prefix;
         const section = buildFallbackPreviewSection(analysisId, data.pairs, {
-          workbookPrefix: derived?.prefix,
+          workbookPrefix,
         });
         return { sections: [section], error: null };
       } catch (fallbackError) {
@@ -2646,6 +2649,13 @@ function buildJudgeImageSourceKey(
   }
   const sanitized = cell.label.replace(/\s+/g, "_");
   return `${analysisId}::${sectionKey}::${rowKey}::${sanitized}`;
+}
+
+function addTrailingSlash(value: string | null | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value.endsWith("/") ? value : `${value}/`;
 }
 
 function buildJudgeImageTarget(
