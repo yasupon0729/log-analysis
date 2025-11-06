@@ -53,6 +53,12 @@ const navItems: NavItem[] = [
     icon: "🖥️",
     href: "/annotation3",
   },
+  {
+    id: "annotation-rendered",
+    label: "アノテーション (輪郭タイル)",
+    icon: "🧩",
+    href: "/annotation4",
+  },
   { id: "results", label: "結果", icon: "🔍", href: "/results" },
 
   // 未実装タブは保守のため残しておくが、ナビゲーションには表示しない
