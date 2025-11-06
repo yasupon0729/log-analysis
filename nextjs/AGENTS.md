@@ -57,6 +57,7 @@
 - コメントは必要最小限。複雑な処理前に1行で要点を注記。
 - ログは `logger.info("event", { context })` のように構造化オブジェクトで出力。
 - React コンポーネントは PascalCase、ユーティリティやフックは camelCase。
+- Next.js 15 では `cookies()` / `headers()` などが **Promise** を返すため、サーバーコンポーネントや Route Handler で利用する際は必ず `await cookies()` のように非同期化してから `get` / `set` を呼ぶこと（未対応だと `Property 'get' does not exist on type 'Promise<...>'` エラーになる）。
 
 ## エラーハンドリング方針
 - サーバー側エラーは `ValidationError` / `ForbiddenError` / `DependencyError` / `UnexpectedError` の分類で返却し、レスポンスは `{ ok: false, code, message, details }` 形式に統一する。
