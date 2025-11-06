@@ -256,12 +256,18 @@ export function AnnotationCanvasClient() {
       const isQueued = queueSet.has(region.id);
       const fill = isQueued
         ? isHovered
-          ? "rgba(220, 38, 38, 0.45)"
-          : "rgba(248, 113, 113, 0.35)"
+          ? "rgba(220, 38, 38, 0.55)"
+          : "rgba(248, 113, 113, 0.38)"
         : isHovered
-          ? "rgba(37, 99, 235, 0.40)"
-          : "rgba(37, 99, 235, 0.18)";
-      const stroke = isQueued ? "#dc2626" : isHovered ? "#1d4ed8" : "#2563eb";
+          ? "rgba(96, 165, 250, 0.55)"
+          : "rgba(37, 99, 235, 0.22)";
+      const stroke = isQueued
+        ? isHovered
+          ? "#b91c1c"
+          : "#dc2626"
+        : isHovered
+          ? "#3b82f6"
+          : "#2563eb";
 
       ctx.save();
       ctx.fillStyle = fill;

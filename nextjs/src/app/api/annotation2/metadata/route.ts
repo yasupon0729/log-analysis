@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+
 import {
   ANNOTATION_COOKIE_NAME,
   TOKEN_MAX_AGE_SECONDS,
@@ -15,9 +16,17 @@ export async function GET() {
   const issuedToken = hasValidToken ? null : generateAnnotationToken();
 
   try {
-    const annotation = await loadAnnotationDataset();
+    const dataset = await loadAnnotationDataset();
+    const regions = dataset.boundaries.map((boundary, index) => ({
+      id: `region-${index + 1}`,
+      label: `領域 ${index + 1}`,
+      bbox: boundary.bbox,
+      score: boundary.score,
+      iou: boundary.iou,
+    }));
+
     const response = NextResponse.json(
-      { ok: true, annotation },
+      { ok: true, regions },
       {
         status: 200,
         headers: {
@@ -25,6 +34,7 @@ export async function GET() {
         },
       },
     );
+
     if (issuedToken) {
       response.cookies.set({
         name: ANNOTATION_COOKIE_NAME,
@@ -36,14 +46,16 @@ export async function GET() {
         maxAge: TOKEN_MAX_AGE_SECONDS,
       });
     }
+
     return response;
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("Failed to load encrypted annotation", error);
+    console.error("Failed to load annotation metadata", error);
     const response = NextResponse.json(
-      { ok: false, error: "Failed to load annotation data" },
+      { ok: false, error: "Failed to load annotation metadata" },
       { status: 500 },
     );
+
     if (issuedToken) {
       response.cookies.set({
         name: ANNOTATION_COOKIE_NAME,
@@ -55,6 +67,7 @@ export async function GET() {
         maxAge: TOKEN_MAX_AGE_SECONDS,
       });
     }
+
     return response;
   }
 }
