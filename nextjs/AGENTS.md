@@ -9,7 +9,6 @@
 - `styled-system/` – Panda CSSの生成物。`npm run format`/`npm run lint`後も同期を維持。
 - `/annotation2` はアノテーション座標をクライアントへ露出しないサーバーヒットテスト版 UI。
 - `/annotation3` はサーバー側でヒットテストとROI合成を行い、画像プレビューのみを返す実験的モード。
-- `/annotation4` は輪郭タイルをサーバーで生成し、ポリゴン座標を配布せずにUI描画を行うモード。
 
 ## 環境構築 (/.README.md ベース)
 ### 必須要件
