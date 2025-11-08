@@ -1,12 +1,14 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
 import {
   ANNOTATION_COOKIE_NAME,
   TOKEN_MAX_AGE_SECONDS,
   generateAnnotationToken,
   verifyAnnotationToken,
 } from "@/app/annotation/token";
-import { loadAnnotationDataset } from "@/lib/annotation/data";
 
 export async function GET() {
   const cookieStore = await cookies();
@@ -15,7 +17,9 @@ export async function GET() {
   const issuedToken = hasValidToken ? null : generateAnnotationToken();
 
   try {
-    const annotation = await loadAnnotationDataset();
+    const filePath = path.join(process.cwd(), "input", "annotation.json");
+    const fileContent = await fs.readFile(filePath, "utf8");
+    const annotation = JSON.parse(fileContent);
     const response = NextResponse.json(
       { ok: true, annotation },
       {
@@ -39,7 +43,7 @@ export async function GET() {
     return response;
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("Failed to load encrypted annotation", error);
+    console.error("Failed to load annotation.json", error);
     const response = NextResponse.json(
       { ok: false, error: "Failed to load annotation data" },
       { status: 500 },

@@ -4,10 +4,9 @@
 - S3上の暗号化ログを取得し、Next.js App Routerで閲覧するダッシュボードです。
 - フロントエンドはPanda CSSでダーク＋ブルー基調、サーバー／ブラウザ双方でPinoラッパーによるロギングを行います。
 - 主要ディレクトリ:
-- `src/app/` – ルーティングとページ。`page.tsx`はサーバーログ発行、UIはクライアント側へ委譲。
-- `src/lib/` – APIクライアント、S3ラッパー、ログユーティリティなどの共通ロジック。
-- `styled-system/` – Panda CSSの生成物。`npm run format`/`npm run lint`後も同期を維持。
-- `/annotation2` はアノテーション座標をクライアントへ露出しないサーバーヒットテスト版 UI。
+  - `src/app/` – ルーティングとページ。`page.tsx`はサーバーログ発行、UIはクライアント側へ委譲。
+  - `src/lib/` – APIクライアント、S3ラッパー、ログユーティリティなどの共通ロジック。
+  - `styled-system/` – Panda CSSの生成物。`npm run format`/`npm run lint`後も同期を維持。
 
 ## 環境構築 (/.README.md ベース)
 ### 必須要件
@@ -46,7 +45,6 @@
 - `.env.local` に以下を設定し、コミットしないこと:
   - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
   - `LOG_ENCRYPTION_KEY` (AES-256-CBC用32バイトキー)
-  - `ANNOTATION_ENCRYPTION_KEY` (アノテーション座標復号用32バイトキー。未設定時は開発用デフォルトキーを使用)
 - サーバーサイドでS3アクセスを行い、クライアントにはキーや資格情報を露出しない。
 
 ## ログ復号フロー
@@ -72,7 +70,6 @@
 
 ## セキュリティとトラブルシュート
 - AWS資格情報は環境変数管理。`.env.local` が壊れている場合は先頭行にコメントを付けるなどで `source` 時のエラーを防ぐ。
-- アノテーション座標は `input/annotation.json.enc` として暗号化保管し、Route Handler で復号して提供する。鍵は `ANNOTATION_ENCRYPTION_KEY` で管理する。
 - Panda CSS の生成物が欠落した場合は `bunx panda codegen` を再実行。
 - S3 接続エラー時は IAM 権限とリージョン設定を再確認。
 
