@@ -14,17 +14,31 @@ interface RawAnnotationPoint {
   y: number;
 }
 
+type RawAnnotationMetrics = Record<string, number | undefined>;
+
 interface RawAnnotationBoundary {
+  id?: string | number;
   polygon: { vertices: RawAnnotationPoint[] };
   bbox: [number, number, number, number];
   score: number;
   iou: number;
+  metrics?: RawAnnotationMetrics;
 }
+
+type RawMetricStats = Record<
+  string,
+  {
+    label: string;
+    min: number;
+    max: number;
+  }
+>;
 
 interface RawAnnotationResponse {
   ok: boolean;
   annotation?: {
     boundaries: RawAnnotationBoundary[];
+    metricStats?: RawMetricStats;
   };
   error?: string;
 }
@@ -36,6 +50,8 @@ interface AnnotationRegion {
   iou: number;
   points: RawAnnotationPoint[];
   bbox: [number, number, number, number];
+  area?: number;
+  metrics: RawAnnotationMetrics;
 }
 
 interface RegionRenderData extends AnnotationRegion {
@@ -48,6 +64,46 @@ interface RangeSelection {
   start: RawAnnotationPoint;
   end: RawAnnotationPoint;
 }
+
+const clampValue = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const pickDefaultMetricKey = (stats: RawMetricStats) => {
+  if (stats && Object.hasOwn(stats, "area")) {
+    return "area";
+  }
+  const keys = Object.keys(stats);
+  return keys[0] ?? "";
+};
+
+const formatMetricValue = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+  const abs = Math.abs(value);
+  if (abs >= 10000) {
+    return Math.round(value).toLocaleString();
+  }
+  if (abs >= 100) {
+    return value.toFixed(1);
+  }
+  if (abs >= 1) {
+    return value.toFixed(2);
+  }
+  return value.toPrecision(3);
+};
+
+const computeSliderStep = (min: number, max: number) => {
+  const span = Math.abs(max - min);
+  if (span === 0) {
+    return 1;
+  }
+  if (span <= 1) {
+    const step = Number((span / 50).toFixed(4));
+    return step > 0 ? step : 0.0001;
+  }
+  return Math.max(1, Math.round(span / 200));
+};
 
 const containerClass = css({
   display: "grid",
@@ -140,6 +196,159 @@ const queuePanelClass = css({
   boxShadow: "0 28px 60px rgba(2, 6, 23, 0.65)",
   color: "gray.100",
   backdropFilter: "blur(8px)",
+});
+
+const filterSectionClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+  padding: { base: "16px", md: "18px" },
+  borderRadius: "16px",
+  borderWidth: "1px",
+  borderColor: "rgba(59, 130, 246, 0.45)",
+  backgroundColor: "rgba(15, 23, 42, 0.55)",
+});
+
+const filterHeaderClass = css({
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  fontSize: "sm",
+  color: "rgba(226, 232, 240, 0.9)",
+});
+
+const filterSummaryClass = css({
+  fontSize: "xs",
+  color: "rgba(148, 163, 184, 0.95)",
+  lineHeight: "1.6",
+});
+
+const filterAddRowClass = css({
+  display: "flex",
+  gap: "10px",
+  flexWrap: "wrap",
+  alignItems: "center",
+});
+
+const filterSelectClass = css({
+  flex: "1",
+  minWidth: "180px",
+  backgroundColor: "rgba(15, 23, 42, 0.85)",
+  color: "white",
+  borderRadius: "10px",
+  borderWidth: "1px",
+  borderColor: "rgba(59, 130, 246, 0.6)",
+  padding: "8px 12px",
+  fontSize: "sm",
+});
+
+const filterListClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+});
+
+const filterCardClass = css({
+  borderWidth: "1px",
+  borderColor: "rgba(59, 130, 246, 0.4)",
+  borderRadius: "14px",
+  padding: "12px",
+  backgroundColor: "rgba(15, 23, 42, 0.35)",
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+});
+
+const filterCardHeaderClass = css({
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+});
+
+const filterLabelClass = css({
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  fontSize: "sm",
+  color: "rgba(226, 232, 240, 0.95)",
+});
+
+const filterCheckboxClass = css({
+  accentColor: "#2563eb",
+  width: "18px",
+  height: "18px",
+});
+
+const filterModeSelectClass = css({
+  backgroundColor: "rgba(37, 99, 235, 0.15)",
+  borderWidth: "1px",
+  borderColor: "rgba(59, 130, 246, 0.6)",
+  color: "rgba(191, 219, 254, 1)",
+  borderRadius: "999px",
+  padding: "4px 10px",
+  fontSize: "sm",
+});
+
+const filterControlsClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+});
+
+const sliderInputClass = css({
+  WebkitAppearance: "none",
+  appearance: "none",
+  width: "100%",
+  height: "6px",
+  borderRadius: "999px",
+  backgroundColor: "rgba(59, 130, 246, 0.25)",
+  outline: "none",
+  cursor: "pointer",
+  "&::-webkit-slider-thumb": {
+    WebkitAppearance: "none",
+    appearance: "none",
+    width: "18px",
+    height: "18px",
+    borderRadius: "999px",
+    backgroundColor: "rgba(59, 130, 246, 0.95)",
+    boxShadow: "0 0 0 3px rgba(59, 130, 246, 0.25)",
+    border: "none",
+  },
+  "&::-moz-range-thumb": {
+    width: "18px",
+    height: "18px",
+    borderRadius: "999px",
+    backgroundColor: "rgba(59, 130, 246, 0.95)",
+    boxShadow: "0 0 0 3px rgba(59, 130, 246, 0.25)",
+    border: "none",
+  },
+});
+
+const sliderMetaClass = css({
+  fontSize: "xs",
+  color: "rgba(148, 163, 184, 0.9)",
+  display: "flex",
+  flexDirection: "column",
+  gap: "2px",
+});
+
+const filterValueBadgeClass = css({
+  fontSize: "xs",
+  color: "rgba(191, 219, 254, 0.95)",
+});
+
+const filterActionRowClass = css({
+  display: "flex",
+  gap: "8px",
+  flexWrap: "wrap",
+});
+
+const rangeControlRowClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
 });
 
 const queueTitleClass = css({
@@ -298,6 +507,20 @@ export function AnnotationCanvasClient() {
   const [regionVersion, setRegionVersion] = useState(0);
   const [isFetching, setIsFetching] = useState(true);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("click");
+  type FilterMode = "min" | "max" | "range";
+  interface MetricFilterState {
+    enabled: boolean;
+    mode: FilterMode;
+    min: number;
+    max: number;
+  }
+
+  const [metricStats, setMetricStats] = useState<RawMetricStats>({});
+  const [metricFilters, setMetricFilters] = useState<
+    Record<string, MetricFilterState>
+  >({});
+  const [filterOrder, setFilterOrder] = useState<string[]>([]);
+  const [pendingMetricKey, setPendingMetricKey] = useState<string>("");
 
   const rangeSelectionRef = useRef<RangeSelection | null>(null);
   const isRangeSelectingRef = useRef(false);
@@ -316,6 +539,240 @@ export function AnnotationCanvasClient() {
     const queueSet = new Set(removalQueue);
     return regionDataRef.current.filter((region) => queueSet.has(region.id));
   }, [removalQueue]);
+
+  const autoFilteredIds = useMemo(() => {
+    if (regionVersion === 0 || filterOrder.length === 0) {
+      return new Set<string>();
+    }
+    const activeFilters = filterOrder
+      .map((key) => {
+        const filter = metricFilters[key];
+        if (!filter || !filter.enabled) {
+          return null;
+        }
+        return { key, filter };
+      })
+      .filter(
+        (entry): entry is { key: string; filter: MetricFilterState } =>
+          entry !== null,
+      );
+    if (activeFilters.length === 0) {
+      return new Set<string>();
+    }
+    const filtered = new Set<string>();
+    for (const region of regionDataRef.current) {
+      const metrics = region.metrics ?? {};
+      let shouldFilter = false;
+      for (const { key, filter } of activeFilters) {
+        const value = metrics[key];
+        if (typeof value !== "number") {
+          shouldFilter = true;
+          break;
+        }
+        if (filter.mode === "min" && value < filter.min) {
+          shouldFilter = true;
+          break;
+        }
+        if (filter.mode === "max" && value > filter.max) {
+          shouldFilter = true;
+          break;
+        }
+        if (
+          filter.mode === "range" &&
+          (value < filter.min || value > filter.max)
+        ) {
+          shouldFilter = true;
+          break;
+        }
+      }
+      if (shouldFilter) {
+        filtered.add(region.id);
+      }
+    }
+    return filtered;
+  }, [filterOrder, metricFilters, regionVersion]);
+
+  const autoFilteredCount = autoFilteredIds.size;
+
+  const metricOptions = useMemo(() => {
+    return Object.entries(metricStats).map(([key, stat]) => ({
+      key,
+      label: stat.label,
+    }));
+  }, [metricStats]);
+
+  const addableMetricOptions = useMemo(() => {
+    if (metricOptions.length === 0) {
+      return [] as { key: string; label: string }[];
+    }
+    return metricOptions.filter((option) => !filterOrder.includes(option.key));
+  }, [filterOrder, metricOptions]);
+
+  useEffect(() => {
+    if (addableMetricOptions.length === 0) {
+      setPendingMetricKey("");
+      return;
+    }
+    if (
+      !pendingMetricKey ||
+      !metricStats[pendingMetricKey] ||
+      filterOrder.includes(pendingMetricKey)
+    ) {
+      setPendingMetricKey(addableMetricOptions[0].key);
+    }
+  }, [addableMetricOptions, filterOrder, metricStats, pendingMetricKey]);
+
+  const handleAddFilter = useCallback(() => {
+    if (!pendingMetricKey) {
+      return;
+    }
+    const stat = metricStats[pendingMetricKey];
+    if (!stat || filterOrder.includes(pendingMetricKey)) {
+      return;
+    }
+    setMetricFilters((current) => ({
+      ...current,
+      [pendingMetricKey]: {
+        enabled: true,
+        mode: "min",
+        min: stat.min,
+        max: stat.max,
+      },
+    }));
+    setFilterOrder((current) => [...current, pendingMetricKey]);
+
+    const remaining = addableMetricOptions
+      .map((option) => option.key)
+      .filter((key) => key !== pendingMetricKey);
+    setPendingMetricKey(remaining[0] ?? "");
+  }, [addableMetricOptions, filterOrder, metricStats, pendingMetricKey]);
+
+  const handleRemoveFilter = useCallback((key: string) => {
+    setMetricFilters((current) => {
+      if (!current[key]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setFilterOrder((current) => current.filter((entry) => entry !== key));
+  }, []);
+
+  const handleToggleFilterEnabled = useCallback((key: string) => {
+    setMetricFilters((current) => {
+      const target = current[key];
+      if (!target) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: { ...target, enabled: !target.enabled },
+      };
+    });
+  }, []);
+
+  const handleModeChange = useCallback(
+    (key: string, mode: FilterMode) => {
+      setMetricFilters((current) => {
+        const target = current[key];
+        const stat = metricStats[key];
+        if (!target || !stat) {
+          return current;
+        }
+        let nextMin = clampValue(target.min, stat.min, stat.max);
+        let nextMax = clampValue(target.max, stat.min, stat.max);
+        if (mode === "range" && nextMin > nextMax) {
+          nextMin = stat.min;
+          nextMax = stat.max;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...target,
+            mode,
+            min: nextMin,
+            max: nextMax,
+          },
+        };
+      });
+    },
+    [metricStats],
+  );
+
+  const handleMinValueChange = useCallback(
+    (key: string, value: number) => {
+      setMetricFilters((current) => {
+        const target = current[key];
+        const stat = metricStats[key];
+        if (!target || !stat) {
+          return current;
+        }
+        const clamped = clampValue(value, stat.min, stat.max);
+        const safeValue =
+          target.mode === "range" ? Math.min(clamped, target.max) : clamped;
+        if (safeValue === target.min) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...target,
+            min: safeValue,
+          },
+        };
+      });
+    },
+    [metricStats],
+  );
+
+  const handleMaxValueChange = useCallback(
+    (key: string, value: number) => {
+      setMetricFilters((current) => {
+        const target = current[key];
+        const stat = metricStats[key];
+        if (!target || !stat) {
+          return current;
+        }
+        const clamped = clampValue(value, stat.min, stat.max);
+        const safeValue =
+          target.mode === "range" ? Math.max(clamped, target.min) : clamped;
+        if (safeValue === target.max) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...target,
+            max: safeValue,
+          },
+        };
+      });
+    },
+    [metricStats],
+  );
+
+  const handleResetFilter = useCallback(
+    (key: string) => {
+      setMetricFilters((current) => {
+        const target = current[key];
+        const stat = metricStats[key];
+        if (!target || !stat) {
+          return current;
+        }
+        return {
+          ...current,
+          [key]: {
+            ...target,
+            enabled: true,
+            min: stat.min,
+            max: stat.max,
+          },
+        };
+      });
+    },
+    [metricStats],
+  );
 
   const getCanvasPoint = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -360,23 +817,33 @@ export function AnnotationCanvasClient() {
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
     const queueSet = new Set(removalQueue);
+    const filteredSet = autoFilteredIds;
 
     for (const region of regionDataRef.current) {
       const isHovered = region.id === hoveredRegionId;
       const isQueued = queueSet.has(region.id);
+      const isFiltered = filteredSet.has(region.id);
       const fill = isQueued
         ? isHovered
           ? "rgba(220, 38, 38, 0.45)"
           : "rgba(248, 113, 113, 0.35)"
-        : isHovered
-          ? "rgba(37, 99, 235, 0.40)"
-          : "rgba(37, 99, 235, 0.18)";
-      const stroke = isQueued ? "#dc2626" : isHovered ? "#1d4ed8" : "#2563eb";
+        : isFiltered
+          ? "rgba(148, 163, 184, 0.25)"
+          : isHovered
+            ? "rgba(37, 99, 235, 0.40)"
+            : "rgba(37, 99, 235, 0.18)";
+      const stroke = isQueued
+        ? "#dc2626"
+        : isFiltered
+          ? "rgba(148, 163, 184, 0.85)"
+          : isHovered
+            ? "#1d4ed8"
+            : "#2563eb";
 
       ctx.save();
       ctx.fillStyle = fill;
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = isHovered ? 2.4 : 1.6;
+      ctx.lineWidth = isHovered ? 2.4 : isFiltered ? 1.2 : 1.6;
       ctx.fill(region.path);
       ctx.stroke(region.path);
       ctx.restore();
@@ -401,7 +868,7 @@ export function AnnotationCanvasClient() {
         ctx.restore();
       }
     }
-  }, [hoveredRegionId, removalQueue]);
+  }, [autoFilteredIds, hoveredRegionId, removalQueue]);
 
   const renderScene = useCallback(() => {
     if (!isImageReady || regionDataRef.current.length === 0) {
@@ -664,16 +1131,82 @@ export function AnnotationCanvasClient() {
         }
 
         const mappedRegions: AnnotationRegion[] =
-          payload.annotation.boundaries.map((boundary, index) => ({
-            id: `region-${index + 1}`,
-            label: `領域 ${index + 1}`,
-            score: boundary.score,
-            iou: boundary.iou,
-            points: boundary.polygon.vertices.map((vertex) => ({ ...vertex })),
-            bbox: boundary.bbox,
-          }));
+          payload.annotation.boundaries.map((boundary, index) => {
+            const resolvedId = boundary.id ?? index + 1;
+            const regionId = String(resolvedId);
+            const metrics = boundary.metrics ?? {};
+            return {
+              id: regionId,
+              label: `領域 ${regionId}`,
+              score: boundary.score,
+              iou: boundary.iou,
+              points: boundary.polygon.vertices.map((vertex) => ({
+                ...vertex,
+              })),
+              bbox: boundary.bbox,
+              area: typeof metrics.area === "number" ? metrics.area : undefined,
+              metrics,
+            };
+          });
 
         if (isMounted) {
+          const metricStatPayload = payload.annotation.metricStats ?? {};
+          setMetricStats(metricStatPayload);
+
+          setMetricFilters((current) => {
+            const currentKeys = Object.keys(current);
+            if (currentKeys.length === 0) {
+              const defaultKey = pickDefaultMetricKey(metricStatPayload);
+              if (!defaultKey) {
+                return {};
+              }
+              const defaultStat = metricStatPayload[defaultKey];
+              return defaultStat
+                ? {
+                    [defaultKey]: {
+                      enabled: true,
+                      mode: "min",
+                      min: defaultStat.min,
+                      max: defaultStat.max,
+                    },
+                  }
+                : {};
+            }
+
+            const next = { ...current } as Record<string, MetricFilterState>;
+            for (const key of currentKeys) {
+              const stat = metricStatPayload[key];
+              if (!stat) {
+                delete next[key];
+                continue;
+              }
+              next[key] = {
+                ...next[key],
+                min: clampValue(next[key].min, stat.min, stat.max),
+                max: clampValue(next[key].max, stat.min, stat.max),
+              };
+            }
+            return next;
+          });
+
+          setFilterOrder((current) => {
+            if (current.length > 0) {
+              const cleaned = current.filter((key) => key in metricStatPayload);
+              if (cleaned.length > 0) {
+                return cleaned;
+              }
+            }
+            const defaultKey = pickDefaultMetricKey(metricStatPayload);
+            return defaultKey ? [defaultKey] : [];
+          });
+
+          setPendingMetricKey((current) => {
+            if (current && metricStatPayload[current]) {
+              return current;
+            }
+            return pickDefaultMetricKey(metricStatPayload);
+          });
+
           regionSourceRef.current = mappedRegions;
           setRegionVersion((version) => version + 1);
         }
@@ -774,6 +1307,9 @@ export function AnnotationCanvasClient() {
             <div className={overlayBadgeClass}>
               <span>{hoveredRegion.label}</span>
               <span>{`score: ${hoveredRegion.score.toFixed(3)} / IoU: ${hoveredRegion.iou.toFixed(3)}`}</span>
+              {typeof hoveredRegion.area === "number" ? (
+                <span>{`area: ${Math.round(hoveredRegion.area).toLocaleString()} px²`}</span>
+              ) : null}
               <span>{`頂点数: ${hoveredRegion.points.length}`}</span>
               <span>{`bbox: [${hoveredRegion.bbox.join(", ")}]`}</span>
             </div>
@@ -793,7 +1329,11 @@ export function AnnotationCanvasClient() {
         </p>
         <div className={selectionControlsClass}>
           <span className={selectionLabelClass}>選択モード</span>
-          <div className={selectionButtonsClass} role="radiogroup" aria-label="選択モード">
+          <div
+            className={selectionButtonsClass}
+            role="radiogroup"
+            aria-label="選択モード"
+          >
             <Button
               type="button"
               size="sm"
@@ -819,7 +1359,8 @@ export function AnnotationCanvasClient() {
           </div>
           <p className={selectionHintClass}>
             範囲選択では Canvas
-            に矩形をドラッグし、その範囲に完全に含まれる領域を一括で追加 / 解除します。
+            に矩形をドラッグし、その範囲に完全に含まれる領域を一括で追加 /
+            解除します。
           </p>
         </div>
         <p className={footnoteClass}>
@@ -841,6 +1382,204 @@ export function AnnotationCanvasClient() {
           <div className={statusBannerClass}>{statusMessage}</div>
         ) : null}
 
+        <div className={filterSectionClass}>
+          <div className={filterHeaderClass}>
+            <span>メトリクスしきい値</span>
+            <span>{`自動除外: ${autoFilteredCount} 件`}</span>
+          </div>
+          <p className={filterSummaryClass}>
+            CSV に含まれる任意の指標をフィルタに追加し、下限 / 上限 /
+            範囲ベースで柔軟に誤認識候補を除外できます。
+          </p>
+          <div className={filterAddRowClass}>
+            <select
+              className={filterSelectClass}
+              value={pendingMetricKey}
+              onChange={(event) => setPendingMetricKey(event.target.value)}
+              disabled={addableMetricOptions.length === 0}
+            >
+              {pendingMetricKey === "" ? (
+                <option value="" disabled>
+                  追加可能なメトリクスはありません
+                </option>
+              ) : null}
+              {addableMetricOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddFilter}
+              disabled={!pendingMetricKey}
+            >
+              フィルタを追加
+            </Button>
+          </div>
+          {filterOrder.length > 0 ? (
+            <div className={filterListClass}>
+              {filterOrder.map((key) => {
+                const stat = metricStats[key];
+                const filter = metricFilters[key];
+                if (!stat || !filter) {
+                  return null;
+                }
+                const sliderStep = computeSliderStep(stat.min, stat.max);
+                const disabled = !filter.enabled;
+                return (
+                  <div key={key} className={filterCardClass}>
+                    <div className={filterCardHeaderClass}>
+                      <label className={filterLabelClass}>
+                        <input
+                          type="checkbox"
+                          className={filterCheckboxClass}
+                          checked={filter.enabled}
+                          onChange={() => handleToggleFilterEnabled(key)}
+                        />
+                        {stat.label}
+                      </label>
+                      <select
+                        className={filterModeSelectClass}
+                        value={filter.mode}
+                        onChange={(event) =>
+                          handleModeChange(
+                            key,
+                            event.target.value as FilterMode,
+                          )
+                        }
+                        disabled={disabled}
+                      >
+                        <option value="min">下限 (&ge;)</option>
+                        <option value="max">上限 (&le;)</option>
+                        <option value="range">範囲</option>
+                      </select>
+                    </div>
+                    <div className={filterControlsClass}>
+                      {filter.mode === "min" ? (
+                        <div className={rangeControlRowClass}>
+                          <input
+                            type="range"
+                            className={sliderInputClass}
+                            min={stat.min}
+                            max={stat.max}
+                            step={sliderStep}
+                            value={filter.min}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              handleMinValueChange(
+                                key,
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                          <span
+                            className={filterValueBadgeClass}
+                          >{`下限: ${formatMetricValue(filter.min)}`}</span>
+                        </div>
+                      ) : null}
+                      {filter.mode === "max" ? (
+                        <div className={rangeControlRowClass}>
+                          <input
+                            type="range"
+                            className={sliderInputClass}
+                            min={stat.min}
+                            max={stat.max}
+                            step={sliderStep}
+                            value={filter.max}
+                            disabled={disabled}
+                            onChange={(event) =>
+                              handleMaxValueChange(
+                                key,
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                          <span
+                            className={filterValueBadgeClass}
+                          >{`上限: ${formatMetricValue(filter.max)}`}</span>
+                        </div>
+                      ) : null}
+                      {filter.mode === "range" ? (
+                        <>
+                          <div className={rangeControlRowClass}>
+                            <input
+                              type="range"
+                              className={sliderInputClass}
+                              min={stat.min}
+                              max={stat.max}
+                              step={sliderStep}
+                              value={filter.min}
+                              disabled={disabled}
+                              onChange={(event) =>
+                                handleMinValueChange(
+                                  key,
+                                  Number(event.target.value),
+                                )
+                              }
+                            />
+                            <span
+                              className={filterValueBadgeClass}
+                            >{`下限: ${formatMetricValue(filter.min)}`}</span>
+                          </div>
+                          <div className={rangeControlRowClass}>
+                            <input
+                              type="range"
+                              className={sliderInputClass}
+                              min={stat.min}
+                              max={stat.max}
+                              step={sliderStep}
+                              value={filter.max}
+                              disabled={disabled}
+                              onChange={(event) =>
+                                handleMaxValueChange(
+                                  key,
+                                  Number(event.target.value),
+                                )
+                              }
+                            />
+                            <span
+                              className={filterValueBadgeClass}
+                            >{`上限: ${formatMetricValue(filter.max)}`}</span>
+                          </div>
+                        </>
+                      ) : null}
+                      <div className={sliderMetaClass}>
+                        <span>{`データ範囲: ${formatMetricValue(stat.min)} 〜 ${formatMetricValue(stat.max)}`}</span>
+                      </div>
+                      <div className={filterActionRowClass}>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleResetFilter(key)}
+                          disabled={disabled}
+                        >
+                          リセット
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleRemoveFilter(key)}
+                        >
+                          削除
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={filterSummaryClass}>
+              フィルタが追加されていません。上のリストから指標を選択して追加してください。
+            </div>
+          )}
+        </div>
+
         {queueRegions.length > 0 ? (
           <div className={queueListClass}>
             {queueRegions.map((region) => (
@@ -849,6 +1588,11 @@ export function AnnotationCanvasClient() {
                 <div className={queueMetaClass}>
                   {`score: ${region.score.toFixed(3)} / IoU: ${region.iou.toFixed(3)}`}
                 </div>
+                {typeof region.area === "number" ? (
+                  <div
+                    className={queueMetaClass}
+                  >{`area: ${Math.round(region.area).toLocaleString()} px²`}</div>
+                ) : null}
                 <div
                   className={queueMetaClass}
                 >{`bbox: [${region.bbox.join(", ")}]`}</div>

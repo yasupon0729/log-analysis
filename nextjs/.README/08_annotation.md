@@ -3,7 +3,7 @@
 ## 全体像
 - ルート `src/app/annotation/page.tsx` はサーバーコンポーネントで、クライアント専用の `AnnotationCanvasClient` を描画するだけの薄いエントリーポイント。
 - UI ロジックは `src/app/annotation/AnnotationCanvasClient.tsx` に集約されており、Panda CSS (`css` ユーティリティ) でキャンバスセクションとキューセクションの 2 カラムレイアウトを構成。
-- 画面初期化時に `/api/annotation` から暗号化済みログを模した多角形座標 JSON を取得し、`public/annotation-sample.png` に重ねて描画するモックダッシュボード。
+- 画面初期化時に `/api/annotation` から暗号化済みログを模した多角形座標 JSON と `input/data.csv` 由来のメトリクス (Area) を取得し、`public/annotation-sample.png` に重ねて描画するモックダッシュボード。
 
 ## レイヤー構成
 - **ベースレイヤー (Layer1):** `drawScene` 開始時に `annotation-sample.png` をキャンバス全面へ描画。解析対象のスクリーンショットやログビューの静止画を表現。
@@ -20,17 +20,20 @@
   - `errorMessage`: API 失敗、画像ロード失敗、Canvas 初期化失敗などを捕捉して `AlertBanner` 代替の簡易バナーで提示。
   - `isFetching` と `loadingOverlay`、`isImageReady` / `regionVersion`: データ取得と画像ロード完了の同期を分離し、再描画トリガーを明確化。
   - `selectionMode`: `"click"` / `"range"` をキャンバス直下のモードトグルボタンで切り替え。`rangeSelectionRef` / `isRangeSelectingRef` が Layer3 の矩形描画と判定に利用される。
+  - `metricStats` / `metricFilters` / `filterOrder`: `/api/annotation` から渡される全メトリクスの min/max/label を保持し、UI から任意の指標を追加・削除できるフィルタビルダーを実現。各フィルタは「下限」「上限」「範囲」の 3 モードに対応し、`autoFilteredIds` で該当領域を抽出して Canvas の塗り分けに反映する。
 - 描画処理:
-  - `buildRegionPaths` で `Path2D` を構築し、`drawScene` が背景画像描画後に全ポリゴンを塗り分け。ホバー時は線幅アップ、キュー投入時は赤系で強調。
+- `buildRegionPaths` で `Path2D` を構築し、`drawScene` が背景画像描画後に全ポリゴンを塗り分け。ホバー時は線幅アップ、キュー投入時は赤系で強調。
+- しきい値フィルタに該当した領域は `autoFilteredIds` を介してグレー系のフィル・ストロークに切り替え、クリック選択とは独立した「自動フィルタ済み」の状態が一目で分かるようにしている。
   - ポインタイベント (`onPointerMove`, `onPointerDown`) では Canvas 上のクライアント座標を実ピクセルにスケールし `context.isPointInPath` で領域を逆引き。`AbortController` 付き `fetch` でアンマウント時のメモリリークを回避。
   - 範囲選択時は `rangeSelectionRef` に保持した矩形をオレンジ色の破線＋半透明塗りで Layer3 に重ね描画し、ドラッグ中も `drawScene` を再実行してライブプレビューする。範囲内にある領域はキューへの追加と解除をトグル動作で処理し、Layer2 と同一の `removalQueue` を共有する。
 - サイドパネル:
-  - `queueList` に現在のキュー内容を列挙し、`Button`（`@/components/ui/Button`）で個別除外・一括クリア・モック保存操作を提供。
+- `queueList` に現在のキュー内容を列挙し、`Button`（`@/components/ui/Button`）で個別除外・一括クリア・モック保存操作を提供。
+- サイドパネルに「メトリクスしきい値」カードを置き、CSV の任意指標を選択してフィルタを追加可能。各フィルタは有効/無効トグル・モード切り替え（下限 / 上限 / 範囲）・スライダー・リセット/削除ボタンを備え、適用中の件数やデータ範囲を即時表示する。
   - ヘルパーテキストで「座標 JSON はサーバー側で保護されトークンで取得」と説明しつつ、キュー操作に特化した UI をまとめている。
 
 ## データ取得・API フロー
 - `src/app/api/annotation/route.ts` の `GET` は `await cookies()` で cookie store を取得し、`annotation-token` が未発行または失効している場合は新たに発行。
-- アノテーションデータは `input/annotation.json` をローカルファイルから読み込み (`fs.readFile`)、`{ ok: true, annotation }` として返却。レスポンスヘッダーは `Cache-Control: no-store` 固定。
+- アノテーションデータは `input/annotation.json` と `input/data.csv` を同時に読み込み、先頭列 (`#` もしくは `id`) と `boundaries[i].id` を突き合わせた上で全メトリクスを `metrics` に埋め込む。さらに各列に対して `min/max/label` を `metricStats` としてレスポンスに付与し、フロントのフィルタビルダー初期化や表示名に利用。欠損や不整合 (ID 未一致 / 数値でない) を検出した場合は 500 を返して異常を明示する。レスポンスヘッダーは `Cache-Control: no-store` 固定。
 - エラー時はログ出力(`console.error`)後 `{ ok: false, error: "Failed to load annotation data" }` を 500 で返しつつ、必要ならトークンだけは発行してクッキーに保存。
 
 ## トークンユーティリティ (`src/app/annotation/token.ts`)
@@ -41,6 +44,7 @@
 ## 依存データ / アセット
 - `public/annotation-sample.png`: キャンバスに敷く背景。`IMAGE_PATH` は固定文字列。
 - `input/annotation.json`: Mask R-CNN 推論風の `boundaries` 配列。各エントリは `polygon.vertices`(x,y), `bbox`, `score`, `iou` を持ち、クライアントでは `AnnotationRegion` へ再マッピングされる。
+- `input/data.csv`: 各領域の Area / Perimeter などを保持する指標一覧。先頭列 (`#` または `id`) を `annotation.json` の `id` と同期させ、全列をメトリクスとして取り込み、UI のフィルタ候補になる。
 - Panda CSS スタイルは `AnnotationCanvasClient.tsx` 内で完結しており、styled-system の生成物と同期が取れている前提。
 
 ## 既知の制約・補足
@@ -49,3 +53,4 @@
 - トークンシークレット未設定時は固定の `dev-annotation-secret` が使われるため、実運用では環境変数の設定と HTTPS 前提 (cookie secure) が必要。
 - 画像サイズは固定 (1049x695) のため、別サイズを扱う場合は `CANVAS_WIDTH/HEIGHT` と `aspectRatio` の更新が必須。
 - 範囲選択は軸平行の矩形で「ポリゴンの全頂点が内側に含まれる」ことを条件にしているため、部分的な交差や斜め選択には対応していない。
+- フィルタは数値指標にのみ対応し、現状は下限/上限/範囲モードを手動で切り替える設計。メトリクス間の複合条件 (例: OR 条件) や単位変換が必要な場合は追加の UI/ロジックが必要。
