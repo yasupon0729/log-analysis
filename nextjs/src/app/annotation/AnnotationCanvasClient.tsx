@@ -42,6 +42,13 @@ interface RegionRenderData extends AnnotationRegion {
   path: Path2D;
 }
 
+type SelectionMode = "click" | "range";
+
+interface RangeSelection {
+  start: RawAnnotationPoint;
+  end: RawAnnotationPoint;
+}
+
 const containerClass = css({
   display: "grid",
   gridTemplateColumns: { base: "1fr", xl: "minmax(0, 3fr) minmax(0, 2fr)" },
@@ -124,18 +131,22 @@ const loadingOverlayClass = css({
 const queuePanelClass = css({
   display: "flex",
   flexDirection: "column",
-  gap: "16px",
+  gap: "20px",
   borderWidth: "1px",
-  borderColor: "gray.200",
-  borderRadius: "16px",
-  backgroundColor: "white",
-  padding: { base: "20px", md: "24px" },
-  boxShadow: "lg",
+  borderColor: "rgba(59, 130, 246, 0.35)",
+  borderRadius: "20px",
+  backgroundColor: "rgba(7, 13, 23, 0.95)",
+  padding: { base: "22px", md: "26px" },
+  boxShadow: "0 28px 60px rgba(2, 6, 23, 0.65)",
+  color: "gray.100",
+  backdropFilter: "blur(8px)",
 });
 
 const queueTitleClass = css({
   fontSize: "lg",
   fontWeight: "semibold",
+  color: "white",
+  letterSpacing: "0.04em",
 });
 
 const queueListClass = css({
@@ -144,6 +155,7 @@ const queueListClass = css({
   gap: "12px",
   maxHeight: "480px",
   overflowY: "auto",
+  paddingRight: "4px",
 });
 
 const queueItemClass = css({
@@ -151,15 +163,17 @@ const queueItemClass = css({
   flexDirection: "column",
   gap: "6px",
   borderWidth: "1px",
-  borderColor: "red.200",
-  backgroundColor: "red.50",
+  borderColor: "rgba(248, 113, 113, 0.45)",
+  backgroundColor: "rgba(248, 113, 113, 0.12)",
   padding: "12px",
   borderRadius: "12px",
+  color: "gray.100",
+  boxShadow: "0 16px 32px rgba(8, 15, 31, 0.55)",
 });
 
 const queueMetaClass = css({
   fontSize: "xs",
-  color: "gray.600",
+  color: "rgba(226, 232, 240, 0.85)",
 });
 
 const helperTextClass = css({
@@ -172,10 +186,11 @@ const statusBannerClass = css({
   fontSize: "sm",
   borderRadius: "10px",
   padding: "10px 12px",
-  backgroundColor: "green.50",
-  color: "green.700",
+  backgroundColor: "rgba(16, 185, 129, 0.14)",
+  color: "rgba(187, 247, 208, 0.95)",
   borderWidth: "1px",
-  borderColor: "green.200",
+  borderColor: "rgba(74, 222, 128, 0.35)",
+  boxShadow: "0 18px 36px rgba(16, 185, 129, 0.25)",
 });
 
 const errorBannerClass = css({
@@ -193,6 +208,81 @@ const footnoteClass = css({
   color: "gray.500",
 });
 
+const selectionControlsClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+});
+
+const selectionButtonsClass = css({
+  display: "flex",
+  gap: "8px",
+  flexWrap: "wrap",
+});
+
+const selectionLabelClass = css({
+  fontSize: "sm",
+  fontWeight: "medium",
+  color: "gray.700",
+});
+
+const selectionHintClass = css({
+  fontSize: "xs",
+  color: "gray.500",
+  lineHeight: "1.4",
+});
+
+const selectionButtonClass = css({
+  borderWidth: "1px",
+  borderColor: "gray.400",
+  backgroundColor: "rgba(30, 41, 59, 0.08)",
+  color: "gray.700",
+  fontWeight: "medium",
+  transition: "all 0.15s ease",
+  _hover: {
+    backgroundColor: "rgba(37, 99, 235, 0.12)",
+    color: "gray.900",
+  },
+  _active: {
+    backgroundColor: "rgba(37, 99, 235, 0.18)",
+  },
+  "&[data-selected='true']": {
+    backgroundColor: "primary.600",
+    color: "white",
+    borderColor: "primary.500",
+    boxShadow: "0 8px 20px rgba(37, 99, 235, 0.25)",
+  },
+});
+
+const queueActionButtonClass = css({
+  borderColor: "rgba(248, 113, 113, 0.9)",
+  color: "white",
+  backgroundColor: "rgba(248, 113, 113, 0.95)",
+  fontWeight: "semibold",
+  boxShadow: "0 10px 26px rgba(248, 113, 113, 0.35)",
+  _hover: {
+    backgroundColor: "rgba(248, 113, 113, 1)",
+    borderColor: "rgba(248, 113, 113, 1)",
+  },
+  _active: {
+    backgroundColor: "rgba(239, 68, 68, 0.95)",
+    borderColor: "rgba(239, 68, 68, 0.95)",
+  },
+});
+
+const queueDescriptionClass = css({
+  fontSize: "sm",
+  color: "rgba(226, 232, 240, 0.9)",
+  lineHeight: "1.7",
+});
+
+const queueEmptyTextClass = css({
+  fontSize: "sm",
+  color: "rgba(148, 163, 184, 0.92)",
+  lineHeight: "1.7",
+  fontStyle: "italic",
+});
+
 export function AnnotationCanvasClient() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -207,6 +297,10 @@ export function AnnotationCanvasClient() {
   const [isImageReady, setIsImageReady] = useState(false);
   const [regionVersion, setRegionVersion] = useState(0);
   const [isFetching, setIsFetching] = useState(true);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>("click");
+
+  const rangeSelectionRef = useRef<RangeSelection | null>(null);
+  const isRangeSelectingRef = useRef(false);
 
   const hoveredRegion = useMemo(() => {
     return (
@@ -222,6 +316,22 @@ export function AnnotationCanvasClient() {
     const queueSet = new Set(removalQueue);
     return regionDataRef.current.filter((region) => queueSet.has(region.id));
   }, [removalQueue]);
+
+  const getCanvasPoint = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return null;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (event.clientX - rect.left) * scaleX;
+      const y = (event.clientY - rect.top) * scaleY;
+      return { x, y };
+    },
+    [],
+  );
 
   const buildRegionPaths = useCallback(() => {
     regionDataRef.current = regionSourceRef.current.map((region) => {
@@ -271,7 +381,34 @@ export function AnnotationCanvasClient() {
       ctx.stroke(region.path);
       ctx.restore();
     }
+
+    const selection = rangeSelectionRef.current;
+    if (selection) {
+      const minX = Math.min(selection.start.x, selection.end.x);
+      const maxX = Math.max(selection.start.x, selection.end.x);
+      const minY = Math.min(selection.start.y, selection.end.y);
+      const maxY = Math.max(selection.start.y, selection.end.y);
+      const width = maxX - minX;
+      const height = maxY - minY;
+      if (width > 2 && height > 2) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(234, 88, 12, 0.9)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 4]);
+        ctx.strokeRect(minX, minY, width, height);
+        ctx.fillStyle = "rgba(251, 146, 60, 0.12)";
+        ctx.fillRect(minX, minY, width, height);
+        ctx.restore();
+      }
+    }
   }, [hoveredRegionId, removalQueue]);
+
+  const renderScene = useCallback(() => {
+    if (!isImageReady || regionDataRef.current.length === 0) {
+      return;
+    }
+    drawScene();
+  }, [drawScene, isImageReady]);
 
   const findRegionAtPoint = useCallback((x: number, y: number) => {
     const ctx = contextRef.current;
@@ -296,27 +433,189 @@ export function AnnotationCanvasClient() {
     });
   }, []);
 
-  const handleCanvasPointer = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>, triggerToggle = false) => {
-      const canvas = canvasRef.current;
-      if (!canvas || regionDataRef.current.length === 0) {
+  const selectRegionsWithinBounds = useCallback((selection: RangeSelection) => {
+    const minX = Math.min(selection.start.x, selection.end.x);
+    const maxX = Math.max(selection.start.x, selection.end.x);
+    const minY = Math.min(selection.start.y, selection.end.y);
+    const maxY = Math.max(selection.start.y, selection.end.y);
+    const width = maxX - minX;
+    const height = maxY - minY;
+    if (width < 2 || height < 2) {
+      return 0;
+    }
+    const containedRegions = regionDataRef.current.filter((region) =>
+      region.points.every(
+        (point) =>
+          point.x >= minX &&
+          point.x <= maxX &&
+          point.y >= minY &&
+          point.y <= maxY,
+      ),
+    );
+    if (containedRegions.length === 0) {
+      setStatusMessage("範囲内に領域はありませんでした。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return 0;
+    }
+    const tally = { added: 0, removed: 0 };
+    setRemovalQueue((current) => {
+      const queue = new Set(current);
+      for (const region of containedRegions) {
+        if (queue.has(region.id)) {
+          queue.delete(region.id);
+          tally.removed += 1;
+        } else {
+          queue.add(region.id);
+          tally.added += 1;
+        }
+      }
+      if (tally.added === 0 && tally.removed === 0) {
+        return current;
+      }
+      return Array.from(queue);
+    });
+    const parts: string[] = [];
+    if (tally.added > 0) {
+      parts.push(`${tally.added} 件追加`);
+    }
+    if (tally.removed > 0) {
+      parts.push(`${tally.removed} 件解除`);
+    }
+    const status =
+      parts.length > 0
+        ? `範囲選択: ${parts.join(" / ")}`
+        : "範囲内の領域は既に現在の選択と一致しています。";
+    setStatusMessage(status);
+    setTimeout(() => setStatusMessage(null), 3200);
+    return tally.added + tally.removed;
+  }, []);
+
+  const cancelRangeSelection = useCallback(
+    (pointerId?: number) => {
+      if (!rangeSelectionRef.current && !isRangeSelectingRef.current) {
         return;
       }
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const x = (event.clientX - rect.left) * scaleX;
-      const y = (event.clientY - rect.top) * scaleY;
+      if (typeof pointerId === "number") {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          try {
+            canvas.releasePointerCapture(pointerId);
+          } catch {
+            // noop
+          }
+        }
+      }
+      rangeSelectionRef.current = null;
+      isRangeSelectingRef.current = false;
+      renderScene();
+    },
+    [renderScene],
+  );
 
-      const region = findRegionAtPoint(x, y);
+  const handleCanvasPointer = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>, triggerToggle = false) => {
+      const point = getCanvasPoint(event);
+      if (!point) {
+        setHoveredRegionId(null);
+        return;
+      }
+      if (regionDataRef.current.length === 0) {
+        setHoveredRegionId(null);
+        return;
+      }
 
+      const region = findRegionAtPoint(point.x, point.y);
       setHoveredRegionId(region?.id ?? null);
 
-      if (triggerToggle && region) {
+      if (selectionMode === "click" && triggerToggle && region) {
         toggleRemovalQueue(region.id);
       }
     },
-    [findRegionAtPoint, toggleRemovalQueue],
+    [findRegionAtPoint, getCanvasPoint, selectionMode, toggleRemovalQueue],
+  );
+
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      handleCanvasPointer(event, false);
+      if (
+        selectionMode === "range" &&
+        isRangeSelectingRef.current &&
+        rangeSelectionRef.current
+      ) {
+        const point = getCanvasPoint(event);
+        if (point) {
+          rangeSelectionRef.current = {
+            ...rangeSelectionRef.current,
+            end: point,
+          };
+          renderScene();
+        }
+      }
+    },
+    [getCanvasPoint, handleCanvasPointer, renderScene, selectionMode],
+  );
+
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (selectionMode === "range") {
+        const point = getCanvasPoint(event);
+        if (!point) {
+          return;
+        }
+        rangeSelectionRef.current = { start: point, end: point };
+        isRangeSelectingRef.current = true;
+        const canvas = canvasRef.current;
+        if (canvas) {
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch {
+            // noop
+          }
+        }
+        renderScene();
+        return;
+      }
+      handleCanvasPointer(event, true);
+    },
+    [getCanvasPoint, handleCanvasPointer, renderScene, selectionMode],
+  );
+
+  const handlePointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (selectionMode !== "range" || !rangeSelectionRef.current) {
+        return;
+      }
+      const canvas = canvasRef.current;
+      if (canvas) {
+        try {
+          canvas.releasePointerCapture(event.pointerId);
+        } catch {
+          // noop
+        }
+      }
+      const selection = rangeSelectionRef.current;
+      rangeSelectionRef.current = null;
+      isRangeSelectingRef.current = false;
+      const width = Math.abs(selection.end.x - selection.start.x);
+      const height = Math.abs(selection.end.y - selection.start.y);
+      if (width < 2 || height < 2) {
+        renderScene();
+        return;
+      }
+      selectRegionsWithinBounds(selection);
+      renderScene();
+    },
+    [renderScene, selectRegionsWithinBounds, selectionMode],
+  );
+
+  const handlePointerLeave = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      setHoveredRegionId(null);
+      if (selectionMode === "range") {
+        cancelRangeSelection(event.pointerId);
+      }
+    },
+    [cancelRangeSelection, selectionMode],
   );
 
   const handleSimulateSave = useCallback(() => {
@@ -333,6 +632,12 @@ export function AnnotationCanvasClient() {
   const handleClearQueue = useCallback(() => {
     setRemovalQueue([]);
   }, []);
+
+  useEffect(() => {
+    if (selectionMode === "click") {
+      cancelRangeSelection();
+    }
+  }, [cancelRangeSelection, selectionMode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -454,9 +759,10 @@ export function AnnotationCanvasClient() {
           <canvas
             ref={canvasRef}
             className={canvasClass}
-            onPointerMove={(event) => handleCanvasPointer(event, false)}
-            onPointerLeave={() => setHoveredRegionId(null)}
-            onPointerDown={(event) => handleCanvasPointer(event, true)}
+            onPointerMove={handlePointerMove}
+            onPointerLeave={handlePointerLeave}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
             aria-label="Mask R-CNN アノテーションキャンバス"
           />
 
@@ -479,10 +785,43 @@ export function AnnotationCanvasClient() {
         ) : null}
 
         <p className={helperTextClass}>
-          ホバーで領域を確認できます。クリックすると誤認識除去キューに追加 /
-          解除します。
+          ホバーで領域を確認できます。クリック選択 (Layer2)
+          では個別に誤認識除去キューへ追加 / 解除します。範囲選択 (Layer3)
+          を有効にすると、ドラッグした矩形に完全に含まれる領域を一括で追加 /
+          解除できます。
           領域は赤で塗り分けされ、保存操作の雰囲気を再現しています。
         </p>
+        <div className={selectionControlsClass}>
+          <span className={selectionLabelClass}>選択モード</span>
+          <div className={selectionButtonsClass} role="radiogroup" aria-label="選択モード">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={selectionButtonClass}
+              data-selected={selectionMode === "click" ? "true" : "false"}
+              aria-pressed={selectionMode === "click"}
+              onClick={() => setSelectionMode("click")}
+            >
+              クリック選択 (Layer2)
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={selectionButtonClass}
+              data-selected={selectionMode === "range" ? "true" : "false"}
+              aria-pressed={selectionMode === "range"}
+              onClick={() => setSelectionMode("range")}
+            >
+              範囲選択 (Layer3)
+            </Button>
+          </div>
+          <p className={selectionHintClass}>
+            範囲選択では Canvas
+            に矩形をドラッグし、その範囲に完全に含まれる領域を一括で追加 / 解除します。
+          </p>
+        </div>
         <p className={footnoteClass}>
           ※ 座標 JSON
           はサーバー側で保護され、ページアクセス時に発行されるトークンを通じて取得しています。
@@ -492,7 +831,7 @@ export function AnnotationCanvasClient() {
       <aside className={queuePanelClass}>
         <div>
           <h2 className={queueTitleClass}>誤認識除去キュー</h2>
-          <p className={helperTextClass}>
+          <p className={queueDescriptionClass}>
             座標 JSON の一時更新 /
             保存ボタン操作を模擬し、ブラウザ側にキューとして保持します。
           </p>
@@ -520,6 +859,7 @@ export function AnnotationCanvasClient() {
                   type="button"
                   size="sm"
                   variant="outline"
+                  className={queueActionButtonClass}
                   onClick={() => toggleRemovalQueue(region.id)}
                 >
                   キューから除外
@@ -528,7 +868,7 @@ export function AnnotationCanvasClient() {
             ))}
           </div>
         ) : (
-          <div className={helperTextClass}>
+          <div className={queueEmptyTextClass}>
             まだ誤認識除去キューに領域はありません。キャンバス上の領域をクリックして追加してください。
           </div>
         )}
