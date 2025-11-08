@@ -47,12 +47,6 @@ const navItems: NavItem[] = [
     icon: "🔒",
     href: "/annotation2",
   },
-  {
-    id: "annotation-server",
-    label: "アノテーション (合成プレビュー)",
-    icon: "🖥️",
-    href: "/annotation3",
-  },
   { id: "results", label: "結果", icon: "🔍", href: "/results" },
 
   // 未実装タブは保守のため残しておくが、ナビゲーションには表示しない

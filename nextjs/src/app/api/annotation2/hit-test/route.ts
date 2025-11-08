@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 
 import {
   ANNOTATION_COOKIE_NAME,
-  generateAnnotationToken,
   TOKEN_MAX_AGE_SECONDS,
+  generateAnnotationToken,
   verifyAnnotationToken,
 } from "@/app/annotation/token";
-import { loadAnnotationDataset } from "@/lib/annotation/data";
-import { findRegionContainingPoint } from "@/lib/annotation/geometry";
+import {
+  AnnotationBoundary,
+  loadAnnotationDataset,
+} from "@/lib/annotation/data";
 
 interface HitTestRequestBody {
   x: number;
@@ -96,4 +98,49 @@ export async function POST(request: Request) {
 
     return response;
   }
+}
+
+function findRegionContainingPoint(
+  boundaries: AnnotationBoundary[],
+  x: number,
+  y: number,
+): { id: string; boundary: AnnotationBoundary; label: string } | null {
+  for (let index = 0; index < boundaries.length; index += 1) {
+    const boundary = boundaries[index];
+    if (isPointInsidePolygon(boundary.polygon.vertices, x, y)) {
+      return {
+        id: `region-${index + 1}`,
+        boundary,
+        label: `領域 ${index + 1}`,
+      };
+    }
+  }
+  return null;
+}
+
+function isPointInsidePolygon(
+  vertices: AnnotationBoundary["polygon"]["vertices"],
+  x: number,
+  y: number,
+): boolean {
+  let inside = false;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i, i += 1) {
+    const xi = vertices[i]?.x ?? 0;
+    const yi = vertices[i]?.y ?? 0;
+    const xj = vertices[j]?.x ?? 0;
+    const yj = vertices[j]?.y ?? 0;
+
+    const denominator = yj - yi;
+    if (denominator === 0) {
+      continue;
+    }
+
+    const intersects =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / denominator + xi;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
