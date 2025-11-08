@@ -1,0 +1,117 @@
+{
+  "version": 5,
+  "updatedAt": "2025-11-08T08:09:17.298Z",
+  "items": [
+    {
+      "id": "27",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:09:08.058Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10272.5,
+          "max": 23214.5
+        }
+      ]
+    },
+    {
+      "id": "28",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:09:08.058Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10272.5,
+          "max": 23214.5
+        }
+      ]
+    },
+    {
+      "id": "30",
+      "origin": "manual",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:08:00.075Z"
+    },
+    {
+      "id": "31",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:09:08.058Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10272.5,
+          "max": 23214.5
+        }
+      ]
+    },
+    {
+      "id": "32",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:09:08.058Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10272.5,
+          "max": 23214.5
+        }
+      ]
+    },
+    {
+      "id": "33",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:09:08.058Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10272.5,
+          "max": 23214.5
+        }
+      ]
+    },
+    {
+      "id": "35",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T07:57:01.830Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10605.5,
+          "max": 23214.5
+        }
+      ]
+    },
+    {
+      "id": "36",
+      "origin": "filter",
+      "status": "queued",
+      "createdAt": "2025-11-08T08:09:08.058Z",
+      "filtersApplied": [
+        {
+          "key": "area",
+          "label": "Area",
+          "mode": "min",
+          "min": 10272.5,
+          "max": 23214.5
+        }
+      ]
+    }
+  ]
+}

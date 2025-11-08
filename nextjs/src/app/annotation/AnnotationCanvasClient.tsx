@@ -65,6 +65,41 @@ interface RangeSelection {
   end: RawAnnotationPoint;
 }
 
+type FilterMode = "min" | "max" | "range";
+
+type RemovalOrigin = "manual" | "filter";
+type RemovalStatus = "queued" | "removed";
+
+interface AppliedFilterSnapshot {
+  key: string;
+  label: string;
+  mode: FilterMode;
+  min: number;
+  max: number;
+}
+
+interface ReviewEntry {
+  id: string;
+  origin: RemovalOrigin;
+  status: RemovalStatus;
+  createdAt: string;
+  filtersApplied?: AppliedFilterSnapshot[];
+}
+
+interface RawReviewItem extends ReviewEntry {}
+
+interface RawReviewFile {
+  version: number;
+  updatedAt: string;
+  items: RawReviewItem[];
+}
+
+interface RawReviewResponse {
+  ok: boolean;
+  review?: RawReviewFile;
+  error?: string;
+}
+
 const clampValue = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -500,14 +535,17 @@ export function AnnotationCanvasClient() {
   const regionDataRef = useRef<RegionRenderData[]>([]);
 
   const [hoveredRegionId, setHoveredRegionId] = useState<string | null>(null);
-  const [removalQueue, setRemovalQueue] = useState<string[]>([]);
+  const [reviewEntries, setReviewEntries] = useState<
+    Record<string, ReviewEntry>
+  >({});
+  const [reviewVersion, setReviewVersion] = useState<number | null>(null);
+  const [isSavingReview, setIsSavingReview] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isImageReady, setIsImageReady] = useState(false);
   const [regionVersion, setRegionVersion] = useState(0);
   const [isFetching, setIsFetching] = useState(true);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("click");
-  type FilterMode = "min" | "max" | "range";
   interface MetricFilterState {
     enabled: boolean;
     mode: FilterMode;
@@ -525,6 +563,15 @@ export function AnnotationCanvasClient() {
   const rangeSelectionRef = useRef<RangeSelection | null>(null);
   const isRangeSelectingRef = useRef(false);
 
+  const removalEntryList = useMemo(
+    () => Object.values(reviewEntries),
+    [reviewEntries],
+  );
+  const removalIdSet = useMemo(
+    () => new Set(Object.keys(reviewEntries)),
+    [reviewEntries],
+  );
+
   const hoveredRegion = useMemo(() => {
     return (
       regionDataRef.current.find((region) => region.id === hoveredRegionId) ??
@@ -533,12 +580,21 @@ export function AnnotationCanvasClient() {
   }, [hoveredRegionId]);
 
   const queueRegions = useMemo(() => {
-    if (!regionDataRef.current.length || removalQueue.length === 0) {
-      return [] as RegionRenderData[];
+    if (!regionDataRef.current.length || removalEntryList.length === 0) {
+      return [] as Array<{ region: RegionRenderData; entry: ReviewEntry }>;
     }
-    const queueSet = new Set(removalQueue);
-    return regionDataRef.current.filter((region) => queueSet.has(region.id));
-  }, [removalQueue]);
+    const regionMap = new Map(
+      regionDataRef.current.map((region) => [region.id, region]),
+    );
+    const rows: Array<{ region: RegionRenderData; entry: ReviewEntry }> = [];
+    for (const entry of removalEntryList) {
+      const region = regionMap.get(entry.id);
+      if (region) {
+        rows.push({ region, entry });
+      }
+    }
+    return rows;
+  }, [removalEntryList]);
 
   const autoFilteredIds = useMemo(() => {
     if (regionVersion === 0 || filterOrder.length === 0) {
@@ -774,6 +830,110 @@ export function AnnotationCanvasClient() {
     [metricStats],
   );
 
+  const buildActiveFilterSnapshots = useCallback(() => {
+    return filterOrder
+      .map((key) => {
+        const filter = metricFilters[key];
+        const stat = metricStats[key];
+        if (!filter || !stat || !filter.enabled) {
+          return null;
+        }
+        return {
+          key,
+          label: stat.label,
+          mode: filter.mode,
+          min: filter.min,
+          max: filter.max,
+        } satisfies AppliedFilterSnapshot;
+      })
+      .filter(
+        (snapshot): snapshot is AppliedFilterSnapshot => snapshot !== null,
+      );
+  }, [filterOrder, metricFilters, metricStats]);
+
+  const handleApplyFiltersToQueue = useCallback(() => {
+    if (autoFilteredIds.size === 0) {
+      setStatusMessage("現在のフィルタに該当する領域はありません。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return;
+    }
+    const filterSnapshots = buildActiveFilterSnapshots();
+    if (filterSnapshots.length === 0) {
+      setStatusMessage("有効なフィルタがありません。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    const ids = Array.from(autoFilteredIds);
+    setReviewEntries((current) => {
+      const next = { ...current };
+      for (const id of ids) {
+        next[id] = {
+          id,
+          origin: "filter",
+          status: "queued",
+          createdAt: timestamp,
+          filtersApplied: filterSnapshots.map((snapshot) => ({ ...snapshot })),
+        };
+      }
+      return next;
+    });
+    setStatusMessage(`フィルタ対象 ${ids.length} 件をキューに反映しました。`);
+    setTimeout(() => setStatusMessage(null), 3200);
+  }, [autoFilteredIds, buildActiveFilterSnapshots]);
+
+  const handleSaveReview = useCallback(async () => {
+    if (removalEntryList.length === 0) {
+      setStatusMessage("保存対象が選択されていません。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return;
+    }
+    setIsSavingReview(true);
+    try {
+      const response = await fetch("/api/annotation/review", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          version: reviewVersion ?? undefined,
+          items: removalEntryList,
+        }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `review save failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as RawReviewResponse;
+      if (!payload.ok || !payload.review) {
+        throw new Error(payload.error ?? "保存レスポンスが不正です");
+      }
+      setReviewVersion(payload.review.version);
+      setReviewEntries(
+        payload.review.items.reduce<Record<string, ReviewEntry>>(
+          (acc, item) => {
+            acc[item.id] = item;
+            return acc;
+          },
+          {},
+        ),
+      );
+      setStatusMessage(
+        `レビュー情報を保存しました (${payload.review.items.length} 件)。`,
+      );
+      setTimeout(() => setStatusMessage(null), 3200);
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error
+          ? saveError.message
+          : "レビュー情報の保存に失敗しました";
+      setErrorMessage(message);
+      setTimeout(() => setErrorMessage(null), 4800);
+    } finally {
+      setIsSavingReview(false);
+    }
+  }, [removalEntryList, reviewVersion]);
+
   const getCanvasPoint = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -816,7 +976,7 @@ export function AnnotationCanvasClient() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    const queueSet = new Set(removalQueue);
+    const queueSet = removalIdSet;
     const filteredSet = autoFilteredIds;
 
     for (const region of regionDataRef.current) {
@@ -868,7 +1028,7 @@ export function AnnotationCanvasClient() {
         ctx.restore();
       }
     }
-  }, [autoFilteredIds, hoveredRegionId, removalQueue]);
+  }, [autoFilteredIds, hoveredRegionId, removalIdSet]);
 
   const renderScene = useCallback(() => {
     if (!isImageReady || regionDataRef.current.length === 0) {
@@ -891,12 +1051,19 @@ export function AnnotationCanvasClient() {
   }, []);
 
   const toggleRemovalQueue = useCallback((regionId: string) => {
-    setRemovalQueue((current) => {
-      const exists = current.includes(regionId);
-      if (exists) {
-        return current.filter((id) => id !== regionId);
+    setReviewEntries((current) => {
+      if (current[regionId]) {
+        const next = { ...current };
+        delete next[regionId];
+        return next;
       }
-      return [...current, regionId];
+      const entry: ReviewEntry = {
+        id: regionId,
+        origin: "manual",
+        status: "queued",
+        createdAt: new Date().toISOString(),
+      };
+      return { ...current, [regionId]: entry };
     });
   }, []);
 
@@ -925,21 +1092,26 @@ export function AnnotationCanvasClient() {
       return 0;
     }
     const tally = { added: 0, removed: 0 };
-    setRemovalQueue((current) => {
-      const queue = new Set(current);
+    setReviewEntries((current) => {
+      let mutated = false;
+      const next = { ...current };
       for (const region of containedRegions) {
-        if (queue.has(region.id)) {
-          queue.delete(region.id);
+        if (next[region.id]) {
+          delete next[region.id];
           tally.removed += 1;
+          mutated = true;
         } else {
-          queue.add(region.id);
+          next[region.id] = {
+            id: region.id,
+            origin: "manual",
+            status: "queued",
+            createdAt: new Date().toISOString(),
+          };
           tally.added += 1;
+          mutated = true;
         }
       }
-      if (tally.added === 0 && tally.removed === 0) {
-        return current;
-      }
-      return Array.from(queue);
+      return mutated ? next : current;
     });
     const parts: string[] = [];
     if (tally.added > 0) {
@@ -1085,19 +1257,8 @@ export function AnnotationCanvasClient() {
     [cancelRangeSelection, selectionMode],
   );
 
-  const handleSimulateSave = useCallback(() => {
-    if (removalQueue.length === 0) {
-      setStatusMessage("保存対象が選択されていません。");
-      return;
-    }
-    setStatusMessage(
-      `${removalQueue.length} 件の領域を誤認識除去キューに送信しました (モック)。`,
-    );
-    setTimeout(() => setStatusMessage(null), 3200);
-  }, [removalQueue]);
-
   const handleClearQueue = useCallback(() => {
-    setRemovalQueue([]);
+    setReviewEntries({});
   }, []);
 
   useEffect(() => {
@@ -1227,6 +1388,57 @@ export function AnnotationCanvasClient() {
     };
 
     void fetchAnnotation();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const fetchReview = async () => {
+      try {
+        const response = await fetch("/api/annotation/review", {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`review fetch failed: ${response.status}`);
+        }
+        const payload = (await response.json()) as RawReviewResponse;
+        if (!payload.ok || !payload.review) {
+          throw new Error(payload.error ?? "annotation review data is invalid");
+        }
+        if (isMounted) {
+          setReviewVersion(payload.review.version);
+          setReviewEntries(
+            payload.review.items.reduce<Record<string, ReviewEntry>>(
+              (acc, item) => {
+                acc[item.id] = item;
+                return acc;
+              },
+              {},
+            ),
+          );
+        }
+      } catch (reviewError) {
+        if (!isMounted || controller.signal.aborted) {
+          return;
+        }
+        const message =
+          reviewError instanceof Error
+            ? reviewError.message
+            : "レビュー情報の取得に失敗しました";
+        setStatusMessage(message);
+        setTimeout(() => setStatusMessage(null), 3200);
+      }
+    };
+
+    void fetchReview();
 
     return () => {
       isMounted = false;
@@ -1578,11 +1790,19 @@ export function AnnotationCanvasClient() {
               フィルタが追加されていません。上のリストから指標を選択して追加してください。
             </div>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleApplyFiltersToQueue}
+            disabled={autoFilteredIds.size === 0 || filterOrder.length === 0}
+          >
+            フィルタ結果をキューに追加
+          </Button>
         </div>
 
         {queueRegions.length > 0 ? (
           <div className={queueListClass}>
-            {queueRegions.map((region) => (
+            {queueRegions.map(({ region, entry }) => (
               <div key={region.id} className={queueItemClass}>
                 <div>{region.label}</div>
                 <div className={queueMetaClass}>
@@ -1592,6 +1812,27 @@ export function AnnotationCanvasClient() {
                   <div
                     className={queueMetaClass}
                   >{`area: ${Math.round(region.area).toLocaleString()} px²`}</div>
+                ) : null}
+                <div className={queueMetaClass}>{`origin: ${
+                  entry.origin === "filter" ? "フィルタ反映" : "手動選択"
+                }`}</div>
+                <div
+                  className={queueMetaClass}
+                >{`status: ${entry.status}`}</div>
+                {entry.filtersApplied && entry.filtersApplied.length > 0 ? (
+                  <div className={queueMetaClass}>
+                    {`filters: ${entry.filtersApplied
+                      .map((snapshot) => {
+                        if (snapshot.mode === "min") {
+                          return `${snapshot.label} >= ${formatMetricValue(snapshot.min)}`;
+                        }
+                        if (snapshot.mode === "max") {
+                          return `${snapshot.label} <= ${formatMetricValue(snapshot.max)}`;
+                        }
+                        return `${snapshot.label} ${formatMetricValue(snapshot.min)}〜${formatMetricValue(snapshot.max)}`;
+                      })
+                      .join(", ")}`}
+                  </div>
                 ) : null}
                 <div
                   className={queueMetaClass}
@@ -1620,16 +1861,17 @@ export function AnnotationCanvasClient() {
         <Button
           type="button"
           variant="solid"
-          onClick={handleSimulateSave}
-          disabled={removalQueue.length === 0}
+          onClick={handleSaveReview}
+          disabled={removalEntryList.length === 0 || isSavingReview}
+          isLoading={isSavingReview}
         >
-          保存ボタン (モック)
+          レビュー状態を保存
         </Button>
         <Button
           type="button"
           variant="ghost"
           onClick={handleClearQueue}
-          disabled={removalQueue.length === 0}
+          disabled={removalEntryList.length === 0}
         >
           キューをクリア
         </Button>

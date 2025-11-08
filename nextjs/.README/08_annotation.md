@@ -11,14 +11,12 @@
 - **Layer3 (範囲選択 + メタ):** Canvas にはオレンジ色の半透明矩形と破線枠で範囲選択結果を重畳し、DOM 側では `overlayBadge` / `loadingOverlay` / `errorBanner` とサイドパネルがメタ情報や操作 UI を提供。矩形に完全に内包されるポリゴンを一括で追加 / 解除できるインタラクション層。
 - これらのレイヤーは React 状態で同期され、Canvas の再描画トリガー (`isImageReady`, `regionVersion`, `removalQueue`, `hoveredRegionId`) と DOM レイヤーが常に同じソースデータを参照する構造になっている。
 
-## クライアント UI (`AnnotationCanvasClient`)
 - `useRef` で `canvas`, `context`, `image`, `regionSource`, `regionData` を保持。`regionSource` は API から受け取った生の頂点列、`regionData` は `Path2D` を組み立て直して Canvas ヒットテストに使うレンダリング用キャッシュ。
 - 状態管理:
   - `hoveredRegionId` / `hoveredRegion`: ホバー中ポリゴンを検出し、オーバーレイバッジに score / IoU / bbox / 頂点数を表示。
-  - `removalQueue`: Canvas クリックまたは「キューから除外」ボタンでトグルされる誤認識除去キュー。`queueRegions` で詳細リストを生成。
-  - `statusMessage`: 「保存ボタン (モック)」押下時に件数付きメッセージを 3.2 秒間表示。実際の保存処理は未実装のスタブ。
-  - `errorMessage`: API 失敗、画像ロード失敗、Canvas 初期化失敗などを捕捉して `AlertBanner` 代替の簡易バナーで提示。
-  - `isFetching` と `loadingOverlay`、`isImageReady` / `regionVersion`: データ取得と画像ロード完了の同期を分離し、再描画トリガーを明確化。
+  - `reviewEntries` / `removalEntryList`: 手動クリックまたはフィルタ反映で誤認識除去候補に入った領域を ID ごとに保持。`origin`（manual/filter）、`status`、`filtersApplied` などを記録し、一覧表示や保存 API にそのまま渡す。
+  - `statusMessage` / `errorMessage`: 操作フィードバックとエラー表示を統一的に管理し、一定時間後に自動で解除。
+  - `isFetching` / `isSavingReview` / `isImageReady` / `regionVersion`: データ取得、レビュー保存、Canvas 初期化状態を個別に追跡して描画更新を制御。
   - `selectionMode`: `"click"` / `"range"` をキャンバス直下のモードトグルボタンで切り替え。`rangeSelectionRef` / `isRangeSelectingRef` が Layer3 の矩形描画と判定に利用される。
   - `metricStats` / `metricFilters` / `filterOrder`: `/api/annotation` から渡される全メトリクスの min/max/label を保持し、UI から任意の指標を追加・削除できるフィルタビルダーを実現。各フィルタは「下限」「上限」「範囲」の 3 モードに対応し、`autoFilteredIds` で該当領域を抽出して Canvas の塗り分けに反映する。
 - 描画処理:
@@ -27,13 +25,16 @@
   - ポインタイベント (`onPointerMove`, `onPointerDown`) では Canvas 上のクライアント座標を実ピクセルにスケールし `context.isPointInPath` で領域を逆引き。`AbortController` 付き `fetch` でアンマウント時のメモリリークを回避。
   - 範囲選択時は `rangeSelectionRef` に保持した矩形をオレンジ色の破線＋半透明塗りで Layer3 に重ね描画し、ドラッグ中も `drawScene` を再実行してライブプレビューする。範囲内にある領域はキューへの追加と解除をトグル動作で処理し、Layer2 と同一の `removalQueue` を共有する。
 - サイドパネル:
-- `queueList` に現在のキュー内容を列挙し、`Button`（`@/components/ui/Button`）で個別除外・一括クリア・モック保存操作を提供。
-- サイドパネルに「メトリクスしきい値」カードを置き、CSV の任意指標を選択してフィルタを追加可能。各フィルタは有効/無効トグル・モード切り替え（下限 / 上限 / 範囲）・スライダー・リセット/削除ボタンを備え、適用中の件数やデータ範囲を即時表示する。
-  - ヘルパーテキストで「座標 JSON はサーバー側で保護されトークンで取得」と説明しつつ、キュー操作に特化した UI をまとめている。
+  - `queueList` は `reviewEntries` を元に現在のキュー内容を列挙し、origin（フィルタ反映 / 手動選択）、status、適用フィルタのスナップショットを表示。`Button`（`@/components/ui/Button`）で個別除外・一括クリアが可能。
+  - 「メトリクスしきい値」カードで CSV に含まれる任意指標をフィルタとして追加・削除できる。各フィルタは有効/無効トグル・モード切り替え（下限 / 上限 / 範囲）・スライダー・リセット/削除ボタンを備え、現在のデータ範囲と自動除外件数を即時表示。
+  - 「フィルタ結果をキューに追加」ボタンで、現在のフィルタに該当する領域を origin=`filter` 付きでレビューキューへ反映。クリック/範囲選択による追加は origin=`manual` となり UI 上も区別できる。
+  - `レビュー状態を保存` ボタンで `/api/annotation/review` に POST し、`annotation-review.json` を更新。競合時は API が最新データを返すため、再適用で整合性を保てる。
+  - ヘルパーテキストで「座標 JSON はサーバー側で保護されトークンで取得」と説明しつつ、フィルタ＆レビュー操作に特化した UI をまとめている。
 
 ## データ取得・API フロー
 - `src/app/api/annotation/route.ts` の `GET` は `await cookies()` で cookie store を取得し、`annotation-token` が未発行または失効している場合は新たに発行。
 - アノテーションデータは `input/annotation.json` と `input/data.csv` を同時に読み込み、先頭列 (`#` もしくは `id`) と `boundaries[i].id` を突き合わせた上で全メトリクスを `metrics` に埋め込む。さらに各列に対して `min/max/label` を `metricStats` としてレスポンスに付与し、フロントのフィルタビルダー初期化や表示名に利用。欠損や不整合 (ID 未一致 / 数値でない) を検出した場合は 500 を返して異常を明示する。レスポンスヘッダーは `Cache-Control: no-store` 固定。
+- `/api/annotation/review` の `GET/POST` で `input/annotation-review.json` を読み書きし、除外キューの確定状態をバージョン付きで管理する。`POST` 時はオプションの `version` で競合検知を行い、保存済み内容と異なる場合は 409 を返して最新データを通知する。
 - エラー時はログ出力(`console.error`)後 `{ ok: false, error: "Failed to load annotation data" }` を 500 で返しつつ、必要ならトークンだけは発行してクッキーに保存。
 
 ## トークンユーティリティ (`src/app/annotation/token.ts`)
@@ -45,10 +46,11 @@
 - `public/annotation-sample.png`: キャンバスに敷く背景。`IMAGE_PATH` は固定文字列。
 - `input/annotation.json`: Mask R-CNN 推論風の `boundaries` 配列。各エントリは `polygon.vertices`(x,y), `bbox`, `score`, `iou` を持ち、クライアントでは `AnnotationRegion` へ再マッピングされる。
 - `input/data.csv`: 各領域の Area / Perimeter などを保持する指標一覧。先頭列 (`#` または `id`) を `annotation.json` の `id` と同期させ、全列をメトリクスとして取り込み、UI のフィルタ候補になる。
+- `input/annotation-review.json`: 除外キューの確定状態を保持するブックキーピングファイル。各エントリは `id` / `origin` / `status` / `filtersApplied` を持ち、`/api/annotation/review` から読み書きされる。
 - Panda CSS スタイルは `AnnotationCanvasClient.tsx` 内で完結しており、styled-system の生成物と同期が取れている前提。
 
 ## 既知の制約・補足
-- 保存処理はフロント側でのメッセージ表示のみ。実際の API 書き込みや S3 更新とは連動していない。
+- `/api/annotation/review` への書き込みは現状ローカル JSON を直接更新するのみで、S3 や DB との同期は未実装。実運用では S3 Versioning + 楽観ロック等での整合性確保が必要。
 - アノテーション JSON はレポジトリに含まれる静的ファイルを読み込むだけで暗号化/復号は未実装（将来的に S3 + 復号フローへ差し替え予定）。
 - トークンシークレット未設定時は固定の `dev-annotation-secret` が使われるため、実運用では環境変数の設定と HTTPS 前提 (cookie secure) が必要。
 - 画像サイズは固定 (1049x695) のため、別サイズを扱う場合は `CANVAS_WIDTH/HEIGHT` と `aspectRatio` の更新が必須。
