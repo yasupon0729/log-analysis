@@ -1603,6 +1603,8 @@ export default function ResultsPageClient({
         accessorKey: "analysisDataId",
         header: "解析ID",
         enableColumnFilter: true,
+        // 数値カラムだが部分一致でのテキスト検索を行いたいため、範囲フィルタではなく文字列フィルタを強制する
+        filterFn: "includesString",
         meta: {
           cellType: "text",
           filterVariant: "text",
