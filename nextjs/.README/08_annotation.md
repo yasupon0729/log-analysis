@@ -29,12 +29,14 @@
   - 「メトリクスしきい値」カードで CSV に含まれる任意指標をフィルタとして追加・削除できる。各フィルタは有効/無効トグル・モード切り替え（下限 / 上限 / 範囲）・スライダー・リセット/削除ボタンを備え、現在のデータ範囲と自動除外件数を即時表示。
   - 「フィルタ結果をキューに追加」ボタンで、現在のフィルタに該当する領域を origin=`filter` 付きでレビューキューへ反映。クリック/範囲選択による追加は origin=`manual` となり UI 上も区別できる。
   - `レビュー状態を保存` ボタンで `/api/annotation/review` に POST し、`annotation-review.json` を更新。競合時は API が最新データを返すため、再適用で整合性を保てる。
+  - 「加筆モード（クリック＋ドラッグで多角形）」カードでは Canvas 上をクリックして頂点を追加し、ボタンを押しながらドラッグするとフリーハンドで頂点が連続追加される。3 点以上で「多角形を確定」→未保存リスト→`/api/annotation/additions` 保存という流れ。未保存一覧では個別削除 / 全破棄も可能。
   - ヘルパーテキストで「座標 JSON はサーバー側で保護されトークンで取得」と説明しつつ、フィルタ＆レビュー操作に特化した UI をまとめている。
 
 ## データ取得・API フロー
 - `src/app/api/annotation/route.ts` の `GET` は `await cookies()` で cookie store を取得し、`annotation-token` が未発行または失効している場合は新たに発行。
 - アノテーションデータは `input/annotation.json` と `input/data.csv` を同時に読み込み、先頭列 (`#` もしくは `id`) と `boundaries[i].id` を突き合わせた上で全メトリクスを `metrics` に埋め込む。さらに各列に対して `min/max/label` を `metricStats` としてレスポンスに付与し、フロントのフィルタビルダー初期化や表示名に利用。欠損や不整合 (ID 未一致 / 数値でない) を検出した場合は 500 を返して異常を明示する。レスポンスヘッダーは `Cache-Control: no-store` 固定。
 - `/api/annotation/review` の `GET/POST` で `input/annotation-review.json` を読み書きし、除外キューの確定状態をバージョン付きで管理する。`POST` 時はオプションの `version` で競合検知を行い、保存済み内容と異なる場合は 409 を返して最新データを通知する。
+- `/api/annotation/additions` の `GET/POST` で `input/annotation-additions.json` を読み書きし、手動加筆した領域の一覧を管理する。こちらも `version` を用いた楽観ロックを行い、保存成功時には最新の追加領域一覧が返却される。
 - エラー時はログ出力(`console.error`)後 `{ ok: false, error: "Failed to load annotation data" }` を 500 で返しつつ、必要ならトークンだけは発行してクッキーに保存。
 
 ## トークンユーティリティ (`src/app/annotation/token.ts`)
@@ -47,6 +49,7 @@
 - `input/annotation.json`: Mask R-CNN 推論風の `boundaries` 配列。各エントリは `polygon.vertices`(x,y), `bbox`, `score`, `iou` を持ち、クライアントでは `AnnotationRegion` へ再マッピングされる。
 - `input/data.csv`: 各領域の Area / Perimeter などを保持する指標一覧。先頭列 (`#` または `id`) を `annotation.json` の `id` と同期させ、全列をメトリクスとして取り込み、UI のフィルタ候補になる。
 - `input/annotation-review.json`: 除外キューの確定状態を保持するブックキーピングファイル。各エントリは `id` / `origin` / `status` / `filtersApplied` を持ち、`/api/annotation/review` から読み書きされる。
+- `input/annotation-additions.json`: 手動で加筆した多角形領域の一覧。`/api/annotation/additions` から読み書きされ、`AnnotationRegion` と同一構造で Canvas にマージされる。
 - Panda CSS スタイルは `AnnotationCanvasClient.tsx` 内で完結しており、styled-system の生成物と同期が取れている前提。
 
 ## 既知の制約・補足

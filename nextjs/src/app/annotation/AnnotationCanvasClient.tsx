@@ -100,6 +100,28 @@ interface RawReviewResponse {
   error?: string;
 }
 
+interface AdditionEntry {
+  id: string;
+  label: string;
+  points: RawAnnotationPoint[];
+  bbox: [number, number, number, number];
+  score?: number;
+  iou?: number;
+  metrics?: RawAnnotationMetrics;
+}
+
+interface RawAdditionFile {
+  version: number;
+  updatedAt: string;
+  items: AdditionEntry[];
+}
+
+interface RawAdditionResponse {
+  ok: boolean;
+  additions?: RawAdditionFile;
+  error?: string;
+}
+
 const clampValue = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -386,6 +408,87 @@ const rangeControlRowClass = css({
   gap: "6px",
 });
 
+const additionSectionClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+  padding: { base: "16px", md: "18px" },
+  borderRadius: "16px",
+  borderWidth: "1px",
+  borderColor: "rgba(34, 197, 94, 0.35)",
+  backgroundColor: "rgba(6, 78, 59, 0.4)",
+});
+
+const additionListClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+  maxHeight: "220px",
+  overflowY: "auto",
+});
+
+const additionItemClass = css({
+  borderWidth: "1px",
+  borderColor: "rgba(16, 185, 129, 0.45)",
+  borderRadius: "12px",
+  padding: "10px",
+  backgroundColor: "rgba(6, 95, 70, 0.55)",
+  color: "rgba(236, 253, 245, 0.9)",
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+});
+
+const additionMetaClass = css({
+  fontSize: "xs",
+  color: "rgba(209, 250, 229, 0.9)",
+});
+
+const additionControlsClass = css({
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px",
+});
+
+const additionBadgeClass = css({
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  fontSize: "xs",
+  color: "rgba(74, 222, 128, 0.95)",
+});
+
+const additionDraftActionsClass = css({
+  display: "flex",
+  gap: "8px",
+  flexWrap: "wrap",
+});
+
+const computeBoundingBox = (
+  points: RawAnnotationPoint[],
+): [number, number, number, number] => {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return [minX, minY, maxX - minX, maxY - minY];
+};
+
+const computePolygonArea = (points: RawAnnotationPoint[]) => {
+  let sum = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i];
+    const next = points[(i + 1) % points.length];
+    sum += current.x * next.y - next.x * current.y;
+  }
+  return Math.abs(sum) / 2;
+};
+
+const distanceBetweenPoints = (a: RawAnnotationPoint, b: RawAnnotationPoint) =>
+  Math.hypot(a.x - b.x, a.y - b.y);
+
 const queueTitleClass = css({
   fontSize: "lg",
   fontWeight: "semibold",
@@ -540,12 +643,20 @@ export function AnnotationCanvasClient() {
   >({});
   const [reviewVersion, setReviewVersion] = useState<number | null>(null);
   const [isSavingReview, setIsSavingReview] = useState(false);
+  const [additionEntries, setAdditionEntries] = useState<AdditionEntry[]>([]);
+  const [additionVersion, setAdditionVersion] = useState<number | null>(null);
+  const [pendingAdditions, setPendingAdditions] = useState<AdditionEntry[]>([]);
+  const [isSavingAdditions, setIsSavingAdditions] = useState(false);
+  const [additionDraftPoints, setAdditionDraftPoints] = useState<
+    RawAnnotationPoint[]
+  >([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isImageReady, setIsImageReady] = useState(false);
   const [regionVersion, setRegionVersion] = useState(0);
   const [isFetching, setIsFetching] = useState(true);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("click");
+  const [isAdditionMode, setIsAdditionMode] = useState(false);
   interface MetricFilterState {
     enabled: boolean;
     mode: FilterMode;
@@ -562,6 +673,10 @@ export function AnnotationCanvasClient() {
 
   const rangeSelectionRef = useRef<RangeSelection | null>(null);
   const isRangeSelectingRef = useRef(false);
+  const additionRegionIdsRef = useRef<Set<string>>(new Set());
+  const additionHoverPointRef = useRef<RawAnnotationPoint | null>(null);
+  const isAdditionDrawingRef = useRef(false);
+  const lastAdditionPointRef = useRef<RawAnnotationPoint | null>(null);
 
   const removalEntryList = useMemo(
     () => Object.values(reviewEntries),
@@ -571,6 +686,66 @@ export function AnnotationCanvasClient() {
     () => new Set(Object.keys(reviewEntries)),
     [reviewEntries],
   );
+
+  const resetAdditionRegions = useCallback(() => {
+    if (additionRegionIdsRef.current.size === 0) {
+      return;
+    }
+    const identifiers = additionRegionIdsRef.current;
+    regionSourceRef.current = regionSourceRef.current.filter(
+      (region) => !identifiers.has(region.id),
+    );
+    additionRegionIdsRef.current = new Set();
+    setAdditionDraftPoints([]);
+    additionHoverPointRef.current = null;
+    setAdditionDraftPoints([]);
+    lastAdditionPointRef.current = null;
+    isAdditionDrawingRef.current = false;
+    setRegionVersion((version) => version + 1);
+  }, []);
+
+  const mergeAdditionRegions = useCallback((entries: AdditionEntry[]) => {
+    if (!entries.length) {
+      return;
+    }
+    const existingIds = new Set(
+      regionSourceRef.current.map((region) => region.id),
+    );
+    const additions: AnnotationRegion[] = [];
+    for (const entry of entries) {
+      if (existingIds.has(entry.id)) {
+        additionRegionIdsRef.current.add(entry.id);
+        continue;
+      }
+      additionRegionIdsRef.current.add(entry.id);
+      additions.push({
+        id: entry.id,
+        label: entry.label ?? `追加領域 ${entry.id}`,
+        score: entry.score ?? 1,
+        iou: entry.iou ?? 1,
+        points: entry.points.map((point) => ({ ...point })),
+        bbox: entry.bbox,
+        area: entry.metrics?.area,
+        metrics: entry.metrics ?? {},
+      });
+    }
+    if (additions.length > 0) {
+      regionSourceRef.current = [...regionSourceRef.current, ...additions];
+      setRegionVersion((version) => version + 1);
+    }
+  }, []);
+
+  const removeAdditionRegionById = useCallback((regionId: string) => {
+    if (!additionRegionIdsRef.current.has(regionId)) {
+      return;
+    }
+    additionRegionIdsRef.current.delete(regionId);
+    const next = regionSourceRef.current.filter(
+      (region) => region.id !== regionId,
+    );
+    regionSourceRef.current = next;
+    setRegionVersion((version) => version + 1);
+  }, []);
 
   const hoveredRegion = useMemo(() => {
     return (
@@ -882,89 +1057,6 @@ export function AnnotationCanvasClient() {
     setTimeout(() => setStatusMessage(null), 3200);
   }, [autoFilteredIds, buildActiveFilterSnapshots]);
 
-  const handleSaveReview = useCallback(async () => {
-    if (removalEntryList.length === 0) {
-      setStatusMessage("保存対象が選択されていません。");
-      setTimeout(() => setStatusMessage(null), 3200);
-      return;
-    }
-    setIsSavingReview(true);
-    try {
-      const response = await fetch("/api/annotation/review", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          version: reviewVersion ?? undefined,
-          items: removalEntryList,
-        }),
-      });
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `review save failed: ${response.status}`);
-      }
-      const payload = (await response.json()) as RawReviewResponse;
-      if (!payload.ok || !payload.review) {
-        throw new Error(payload.error ?? "保存レスポンスが不正です");
-      }
-      setReviewVersion(payload.review.version);
-      setReviewEntries(
-        payload.review.items.reduce<Record<string, ReviewEntry>>(
-          (acc, item) => {
-            acc[item.id] = item;
-            return acc;
-          },
-          {},
-        ),
-      );
-      setStatusMessage(
-        `レビュー情報を保存しました (${payload.review.items.length} 件)。`,
-      );
-      setTimeout(() => setStatusMessage(null), 3200);
-    } catch (saveError) {
-      const message =
-        saveError instanceof Error
-          ? saveError.message
-          : "レビュー情報の保存に失敗しました";
-      setErrorMessage(message);
-      setTimeout(() => setErrorMessage(null), 4800);
-    } finally {
-      setIsSavingReview(false);
-    }
-  }, [removalEntryList, reviewVersion]);
-
-  const getCanvasPoint = useCallback(
-    (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        return null;
-      }
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const x = (event.clientX - rect.left) * scaleX;
-      const y = (event.clientY - rect.top) * scaleY;
-      return { x, y };
-    },
-    [],
-  );
-
-  const buildRegionPaths = useCallback(() => {
-    regionDataRef.current = regionSourceRef.current.map((region) => {
-      const path = new Path2D();
-      region.points.forEach((point, index) => {
-        if (index === 0) {
-          path.moveTo(point.x, point.y);
-        } else {
-          path.lineTo(point.x, point.y);
-        }
-      });
-      path.closePath();
-      return { ...region, path };
-    });
-  }, []);
-
   const drawScene = useCallback(() => {
     const canvas = canvasRef.current;
     const ctx = contextRef.current;
@@ -1028,7 +1120,49 @@ export function AnnotationCanvasClient() {
         ctx.restore();
       }
     }
-  }, [autoFilteredIds, hoveredRegionId, removalIdSet]);
+
+    if (additionDraftPoints.length > 0) {
+      const previewPoints = [...additionDraftPoints];
+      if (isAdditionMode && additionHoverPointRef.current) {
+        previewPoints.push(additionHoverPointRef.current);
+      }
+      if (previewPoints.length >= 2) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.95)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash(
+          previewPoints.length > additionDraftPoints.length ? [4, 3] : [],
+        );
+        ctx.beginPath();
+        ctx.moveTo(previewPoints[0].x, previewPoints[0].y);
+        for (let i = 1; i < previewPoints.length; i += 1) {
+          ctx.lineTo(previewPoints[i].x, previewPoints[i].y);
+        }
+        if (previewPoints.length === additionDraftPoints.length) {
+          ctx.closePath();
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (additionDraftPoints.length >= 3) {
+          ctx.fillStyle = "rgba(16, 185, 129, 0.14)";
+          ctx.fill();
+        }
+        ctx.fillStyle = "rgba(16, 185, 129, 0.95)";
+        for (const point of additionDraftPoints) {
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+  }, [
+    additionDraftPoints,
+    autoFilteredIds,
+    hoveredRegionId,
+    isAdditionMode,
+    removalIdSet,
+  ]);
 
   const renderScene = useCallback(() => {
     if (!isImageReady || regionDataRef.current.length === 0) {
@@ -1036,6 +1170,249 @@ export function AnnotationCanvasClient() {
     }
     drawScene();
   }, [drawScene, isImageReady]);
+
+  const handleAddDraftPoint = useCallback(
+    (point: RawAnnotationPoint, replaceLast = false) => {
+      setAdditionDraftPoints((current) => {
+        if (replaceLast && current.length > 0) {
+          const next = [...current];
+          next[next.length - 1] = point;
+          return next;
+        }
+        return [...current, point];
+      });
+      lastAdditionPointRef.current = point;
+      additionHoverPointRef.current = null;
+      renderScene();
+    },
+    [renderScene],
+  );
+
+  const handleAdditionDragPoint = useCallback(
+    (point: RawAnnotationPoint) => {
+      const lastPoint = lastAdditionPointRef.current;
+      if (!lastPoint) {
+        handleAddDraftPoint(point);
+        return;
+      }
+      if (distanceBetweenPoints(lastPoint, point) < 3) {
+        return;
+      }
+      handleAddDraftPoint(point);
+    },
+    [handleAddDraftPoint],
+  );
+
+  const handleUndoDraftPoint = useCallback(() => {
+    setAdditionDraftPoints((current) => {
+      if (current.length === 0) {
+        return current;
+      }
+      return current.slice(0, current.length - 1);
+    });
+    additionHoverPointRef.current = null;
+    renderScene();
+  }, [renderScene]);
+
+  const handleFinalizeAdditionDraft = useCallback(() => {
+    if (additionDraftPoints.length < 3) {
+      setStatusMessage("加筆するには 3 点以上が必要です。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return;
+    }
+    const id = `addition-${Date.now()}`;
+    const label = `手動追加 ${additionEntries.length + pendingAdditions.length + 1}`;
+    const points = additionDraftPoints.map((point) => ({ ...point }));
+    const bbox = computeBoundingBox(points);
+    const area = computePolygonArea(points);
+    const entry: AdditionEntry = {
+      id,
+      label,
+      points,
+      bbox,
+      score: 1,
+      iou: 1,
+      metrics: {
+        area: Number(area.toFixed(2)),
+      },
+    };
+    setPendingAdditions((current) => [...current, entry]);
+    mergeAdditionRegions([entry]);
+    setAdditionDraftPoints([]);
+    additionHoverPointRef.current = null;
+    lastAdditionPointRef.current = null;
+    setStatusMessage(`加筆領域を追加しました (${label})`);
+    setTimeout(() => setStatusMessage(null), 3200);
+  }, [
+    additionDraftPoints,
+    additionEntries.length,
+    mergeAdditionRegions,
+    pendingAdditions.length,
+  ]);
+
+  const handleClearAdditionDraft = useCallback(() => {
+    setAdditionDraftPoints([]);
+    additionHoverPointRef.current = null;
+    lastAdditionPointRef.current = null;
+    isAdditionDrawingRef.current = false;
+    renderScene();
+  }, [renderScene]);
+
+  const handleSaveReview = useCallback(async () => {
+    if (removalEntryList.length === 0) {
+      setStatusMessage("保存対象が選択されていません。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return;
+    }
+    setIsSavingReview(true);
+    try {
+      const response = await fetch("/api/annotation/review", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          version: reviewVersion ?? undefined,
+          items: removalEntryList,
+        }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `review save failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as RawReviewResponse;
+      if (!payload.ok || !payload.review) {
+        throw new Error(payload.error ?? "保存レスポンスが不正です");
+      }
+      setReviewVersion(payload.review.version);
+      setReviewEntries(
+        payload.review.items.reduce<Record<string, ReviewEntry>>(
+          (acc, item) => {
+            acc[item.id] = item;
+            return acc;
+          },
+          {},
+        ),
+      );
+      setStatusMessage(
+        `レビュー情報を保存しました (${payload.review.items.length} 件)。`,
+      );
+      setTimeout(() => setStatusMessage(null), 3200);
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error
+          ? saveError.message
+          : "レビュー情報の保存に失敗しました";
+      setErrorMessage(message);
+      setTimeout(() => setErrorMessage(null), 4800);
+    } finally {
+      setIsSavingReview(false);
+    }
+  }, [removalEntryList, reviewVersion]);
+
+  const handleRemovePendingAddition = useCallback(
+    (additionId: string) => {
+      setPendingAdditions((current) =>
+        current.filter((entry) => entry.id !== additionId),
+      );
+      removeAdditionRegionById(additionId);
+    },
+    [removeAdditionRegionById],
+  );
+
+  const handleClearPendingAdditions = useCallback(() => {
+    setPendingAdditions((current) => {
+      for (const entry of current) {
+        removeAdditionRegionById(entry.id);
+      }
+      return [];
+    });
+  }, [removeAdditionRegionById]);
+
+  const handleSaveAdditions = useCallback(async () => {
+    if (pendingAdditions.length === 0) {
+      setStatusMessage("保存する加筆がありません。");
+      setTimeout(() => setStatusMessage(null), 3200);
+      return;
+    }
+    setIsSavingAdditions(true);
+    try {
+      const payloadItems = [...additionEntries, ...pendingAdditions];
+      const response = await fetch("/api/annotation/additions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          version: additionVersion ?? undefined,
+          items: payloadItems,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `additions save failed: ${response.status}`);
+      }
+      const payload = (await response.json()) as RawAdditionResponse;
+      if (!payload.ok || !payload.additions) {
+        throw new Error(payload.error ?? "加筆保存レスポンスが不正です");
+      }
+      resetAdditionRegions();
+      setAdditionVersion(payload.additions.version);
+      setAdditionEntries(payload.additions.items);
+      setPendingAdditions([]);
+      mergeAdditionRegions(payload.additions.items);
+      setStatusMessage(
+        `加筆データを保存しました (${payload.additions.items.length} 件)。`,
+      );
+      setTimeout(() => setStatusMessage(null), 3200);
+    } catch (saveError) {
+      const message =
+        saveError instanceof Error
+          ? saveError.message
+          : "加筆データの保存に失敗しました";
+      setErrorMessage(message);
+      setTimeout(() => setErrorMessage(null), 4800);
+    } finally {
+      setIsSavingAdditions(false);
+    }
+  }, [
+    additionEntries,
+    additionVersion,
+    mergeAdditionRegions,
+    pendingAdditions,
+    resetAdditionRegions,
+  ]);
+
+  const getCanvasPoint = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return null;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (event.clientX - rect.left) * scaleX;
+      const y = (event.clientY - rect.top) * scaleY;
+      return { x, y };
+    },
+    [],
+  );
+
+  const buildRegionPaths = useCallback(() => {
+    regionDataRef.current = regionSourceRef.current.map((region) => {
+      const path = new Path2D();
+      region.points.forEach((point, index) => {
+        if (index === 0) {
+          path.moveTo(point.x, point.y);
+        } else {
+          path.lineTo(point.x, point.y);
+        }
+      });
+      path.closePath();
+      return { ...region, path };
+    });
+  }, []);
 
   const findRegionAtPoint = useCallback((x: number, y: number) => {
     const ctx = contextRef.current;
@@ -1176,6 +1553,16 @@ export function AnnotationCanvasClient() {
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       handleCanvasPointer(event, false);
+      if (isAdditionMode) {
+        const point = getCanvasPoint(event);
+        if (point && isAdditionDrawingRef.current) {
+          handleAdditionDragPoint(point);
+        } else {
+          additionHoverPointRef.current = point;
+          renderScene();
+        }
+        return;
+      }
       if (
         selectionMode === "range" &&
         isRangeSelectingRef.current &&
@@ -1191,11 +1578,27 @@ export function AnnotationCanvasClient() {
         }
       }
     },
-    [getCanvasPoint, handleCanvasPointer, renderScene, selectionMode],
+    [
+      getCanvasPoint,
+      handleAdditionDragPoint,
+      handleCanvasPointer,
+      isAdditionMode,
+      renderScene,
+      selectionMode,
+    ],
   );
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (isAdditionMode) {
+        const point = getCanvasPoint(event);
+        if (!point) {
+          return;
+        }
+        handleAddDraftPoint(point);
+        isAdditionDrawingRef.current = true;
+        return;
+      }
       if (selectionMode === "range") {
         const point = getCanvasPoint(event);
         if (!point) {
@@ -1216,11 +1619,24 @@ export function AnnotationCanvasClient() {
       }
       handleCanvasPointer(event, true);
     },
-    [getCanvasPoint, handleCanvasPointer, renderScene, selectionMode],
+    [
+      getCanvasPoint,
+      handleAddDraftPoint,
+      handleCanvasPointer,
+      isAdditionMode,
+      renderScene,
+      selectionMode,
+    ],
   );
 
   const handlePointerUp = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (isAdditionMode && isAdditionDrawingRef.current) {
+        isAdditionDrawingRef.current = false;
+        additionHoverPointRef.current = null;
+        renderScene();
+        return;
+      }
       if (selectionMode !== "range" || !rangeSelectionRef.current) {
         return;
       }
@@ -1244,17 +1660,23 @@ export function AnnotationCanvasClient() {
       selectRegionsWithinBounds(selection);
       renderScene();
     },
-    [renderScene, selectRegionsWithinBounds, selectionMode],
+    [isAdditionMode, renderScene, selectRegionsWithinBounds, selectionMode],
   );
 
   const handlePointerLeave = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       setHoveredRegionId(null);
+      if (isAdditionMode) {
+        additionHoverPointRef.current = null;
+        isAdditionDrawingRef.current = false;
+        renderScene();
+        return;
+      }
       if (selectionMode === "range") {
         cancelRangeSelection(event.pointerId);
       }
     },
-    [cancelRangeSelection, selectionMode],
+    [cancelRangeSelection, isAdditionMode, renderScene, selectionMode],
   );
 
   const handleClearQueue = useCallback(() => {
@@ -1266,6 +1688,12 @@ export function AnnotationCanvasClient() {
       cancelRangeSelection();
     }
   }, [cancelRangeSelection, selectionMode]);
+
+  useEffect(() => {
+    if (!isAdditionMode) {
+      handleClearAdditionDraft();
+    }
+  }, [handleClearAdditionDraft, isAdditionMode]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1445,6 +1873,53 @@ export function AnnotationCanvasClient() {
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const fetchAdditions = async () => {
+      try {
+        const response = await fetch("/api/annotation/additions", {
+          method: "GET",
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`additions fetch failed: ${response.status}`);
+        }
+        const payload = (await response.json()) as RawAdditionResponse;
+        if (!payload.ok || !payload.additions) {
+          throw new Error(
+            payload.error ?? "annotation additions data is invalid",
+          );
+        }
+        if (isMounted) {
+          resetAdditionRegions();
+          setAdditionVersion(payload.additions.version);
+          setAdditionEntries(payload.additions.items);
+          mergeAdditionRegions(payload.additions.items);
+        }
+      } catch (additionError) {
+        if (!isMounted || controller.signal.aborted) {
+          return;
+        }
+        const message =
+          additionError instanceof Error
+            ? additionError.message
+            : "加筆データの取得に失敗しました";
+        setStatusMessage(message);
+        setTimeout(() => setStatusMessage(null), 3200);
+      }
+    };
+
+    void fetchAdditions();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [mergeAdditionRegions, resetAdditionRegions]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1798,6 +2273,106 @@ export function AnnotationCanvasClient() {
           >
             フィルタ結果をキューに追加
           </Button>
+        </div>
+
+        <div className={additionSectionClass}>
+          <div className={filterHeaderClass}>
+            <span>加筆モード（クリックで多角形）</span>
+            <Button
+              type="button"
+              size="sm"
+              variant={isAdditionMode ? "solid" : "outline"}
+              onClick={() => setIsAdditionMode((mode) => !mode)}
+            >
+              {isAdditionMode ? "終了する" : "開始する"}
+            </Button>
+          </div>
+          <p className={filterSummaryClass}>
+            加筆モード中は Canvas 上でクリックするたびに頂点を追加します。3
+            点以上になったら「多角形を確定」を押すと手動加筆として登録されます。
+          </p>
+          <div className={additionDraftActionsClass}>
+            <span
+              className={additionMetaClass}
+            >{`現在の頂点数: ${additionDraftPoints.length}`}</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="solid"
+              onClick={handleFinalizeAdditionDraft}
+              disabled={additionDraftPoints.length < 3}
+            >
+              多角形を確定
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleUndoDraftPoint}
+              disabled={additionDraftPoints.length === 0}
+            >
+              最後の頂点を削除
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={handleClearAdditionDraft}
+              disabled={additionDraftPoints.length === 0}
+            >
+              リセット
+            </Button>
+          </div>
+          {pendingAdditions.length > 0 ? (
+            <div className={additionListClass}>
+              {pendingAdditions.map((entry) => (
+                <div key={entry.id} className={additionItemClass}>
+                  <div className={additionBadgeClass}>{entry.label}</div>
+                  <div className={additionMetaClass}>
+                    {`bbox: [${entry.bbox.map((value) => Math.round(value)).join(", ")}]`}
+                  </div>
+                  {entry.metrics?.area ? (
+                    <div className={additionMetaClass}>
+                      {`area: ${Math.round(entry.metrics.area).toLocaleString()} px²`}
+                    </div>
+                  ) : null}
+                  <div className={additionControlsClass}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRemovePendingAddition(entry.id)}
+                    >
+                      削除
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={filterSummaryClass}>未保存の加筆はありません。</div>
+          )}
+          <div className={additionControlsClass}>
+            <Button
+              type="button"
+              variant="solid"
+              size="sm"
+              onClick={handleSaveAdditions}
+              disabled={pendingAdditions.length === 0 || isSavingAdditions}
+              isLoading={isSavingAdditions}
+            >
+              加筆を保存
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleClearPendingAdditions}
+              disabled={pendingAdditions.length === 0}
+            >
+              未保存を破棄
+            </Button>
+          </div>
         </div>
 
         {queueRegions.length > 0 ? (
