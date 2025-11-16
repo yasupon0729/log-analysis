@@ -19,6 +19,10 @@ import {
   useState,
   useTransition,
 } from "react";
+import {
+  createAdvancedTextFilter,
+  createDateRangeFilter,
+} from "@/components/tanstack-table/filterFns";
 import TanstackTable from "@/components/tanstack-table/TanstackTable";
 import type {
   CustomColumnMeta,
@@ -280,6 +284,15 @@ export default function ResultsPageClient({
   const modalTitleId = useId();
   const previewCacheKeyRef = useRef<string | null>(null);
   const previousSearchParamsRef = useRef<string | null>(null);
+
+  const advancedTextFilter = useMemo(
+    () => createAdvancedTextFilter<AnalysisResultRow>(),
+    [],
+  );
+  const dateRangeFilter = useMemo(
+    () => createDateRangeFilter<AnalysisResultRow>(),
+    [],
+  );
 
   const updateUrl = useCallback(
     (
@@ -1603,12 +1616,12 @@ export default function ResultsPageClient({
         accessorKey: "analysisDataId",
         header: "解析ID",
         enableColumnFilter: true,
-        // 数値カラムだが部分一致でのテキスト検索を行いたいため、範囲フィルタではなく文字列フィルタを強制する
-        filterFn: "includesString",
+        // 数値カラムでも正規表現 / OR / AND を使ったテキスト検索が可能になるようカスタムフィルタを使用
+        filterFn: advancedTextFilter,
         meta: {
           cellType: "text",
           filterVariant: "text",
-          filterPlaceholder: "解析IDで絞り込み",
+          filterPlaceholder: "正規表現・||・&&で絞り込み",
         },
         cell: (context) => {
           const value = context.getValue<number | string | null>();
@@ -1654,6 +1667,7 @@ export default function ResultsPageClient({
           formatTimestamp(context.getValue<string>(), dateFormatter),
         enableColumnFilter: true,
         enableGlobalFilter: false,
+        filterFn: dateRangeFilter,
         meta: {
           cellType: "date",
           filterVariant: "dateRange",
@@ -1664,6 +1678,7 @@ export default function ResultsPageClient({
         accessorKey: "analyzerName",
         header: "解析担当",
         enableColumnFilter: true,
+        filterFn: advancedTextFilter,
         meta: {
           cellType: "text",
           filterVariant: "text",
@@ -1674,6 +1689,7 @@ export default function ResultsPageClient({
         accessorKey: "aiModelName",
         header: "AIモデル名",
         enableColumnFilter: true,
+        filterFn: advancedTextFilter,
         meta: {
           cellType: "text",
           filterVariant: "text",
@@ -1684,6 +1700,7 @@ export default function ResultsPageClient({
         accessorKey: "aiModelCode",
         header: "AIモデルコード",
         enableColumnFilter: true,
+        filterFn: advancedTextFilter,
         meta: {
           cellType: "text",
           filterVariant: "text",
@@ -1694,6 +1711,7 @@ export default function ResultsPageClient({
         accessorKey: "userEmail",
         header: "メールアドレス",
         enableColumnFilter: true,
+        filterFn: advancedTextFilter,
         meta: {
           cellType: "text",
           filterVariant: "text",
@@ -1797,7 +1815,9 @@ export default function ResultsPageClient({
     return columns;
   }, [
     activeDownloads,
+    advancedTextFilter,
     dateFormatter,
+    dateRangeFilter,
     handleDownload,
     analysisTypeFilterOptions,
     statusFilterOptions,

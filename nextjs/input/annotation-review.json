@@ -1,117 +1,24 @@
 {
-  "version": 5,
-  "updatedAt": "2025-11-08T08:09:17.298Z",
+  "version": 7,
+  "updatedAt": "2025-11-16T08:55:39.794Z",
   "items": [
     {
-      "id": "27",
-      "origin": "filter",
-      "status": "queued",
-      "createdAt": "2025-11-08T08:09:08.058Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10272.5,
-          "max": 23214.5
-        }
-      ]
-    },
-    {
-      "id": "28",
-      "origin": "filter",
-      "status": "queued",
-      "createdAt": "2025-11-08T08:09:08.058Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10272.5,
-          "max": 23214.5
-        }
-      ]
-    },
-    {
-      "id": "30",
+      "id": "7",
       "origin": "manual",
       "status": "queued",
-      "createdAt": "2025-11-08T08:08:00.075Z"
+      "createdAt": "2025-11-16T07:51:41.029Z"
     },
     {
-      "id": "31",
-      "origin": "filter",
+      "id": "24",
+      "origin": "manual",
       "status": "queued",
-      "createdAt": "2025-11-08T08:09:08.058Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10272.5,
-          "max": 23214.5
-        }
-      ]
+      "createdAt": "2025-11-16T08:55:21.178Z"
     },
     {
-      "id": "32",
-      "origin": "filter",
+      "id": "25",
+      "origin": "manual",
       "status": "queued",
-      "createdAt": "2025-11-08T08:09:08.058Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10272.5,
-          "max": 23214.5
-        }
-      ]
-    },
-    {
-      "id": "33",
-      "origin": "filter",
-      "status": "queued",
-      "createdAt": "2025-11-08T08:09:08.058Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10272.5,
-          "max": 23214.5
-        }
-      ]
-    },
-    {
-      "id": "35",
-      "origin": "filter",
-      "status": "queued",
-      "createdAt": "2025-11-08T07:57:01.830Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10605.5,
-          "max": 23214.5
-        }
-      ]
-    },
-    {
-      "id": "36",
-      "origin": "filter",
-      "status": "queued",
-      "createdAt": "2025-11-08T08:09:08.058Z",
-      "filtersApplied": [
-        {
-          "key": "area",
-          "label": "Area",
-          "mode": "min",
-          "min": 10272.5,
-          "max": 23214.5
-        }
-      ]
+      "createdAt": "2025-11-16T08:55:21.819Z"
     }
   ]
 }
