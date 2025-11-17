@@ -59,3 +59,8 @@
 - 画像サイズは固定 (1049x695) のため、別サイズを扱う場合は `CANVAS_WIDTH/HEIGHT` と `aspectRatio` の更新が必須。
 - 範囲選択は軸平行の矩形で「ポリゴンの全頂点が内側に含まれる」ことを条件にしているため、部分的な交差や斜め選択には対応していない。
 - フィルタは数値指標にのみ対応し、現状は下限/上限/範囲モードを手動で切り替える設計。メトリクス間の複合条件 (例: OR 条件) や単位変換が必要な場合は追加の UI/ロジックが必要。
+
+## 現在判明している注意点
+- **Layer3 の Pointer Capture は必須:** 範囲選択モードは `canvas.setPointerCapture(pointerId)` を前提に実装されている。キャプチャを外すと `pointerleave` のたびに `cancelRangeSelection()` が走り、矩形が始まらなくなる。
+- **キャプチャ解放を徹底すること:** `pointerup` / `pointerleave` / `pointercancel` / モード切り替え / アンマウント時に `releasePointerCapture` を確実に呼ぶ。解放漏れがあるとサイドバーのクリックイベントが戻らず、ページ遷移できなくなる。
+- **ログで追跡可能:** `handlePointerDown` / `handlePointerUp` などに `logger.debug` を仕込めば、範囲選択が発火しているか、キャプチャが解放されたかを `logs/client/app-prod.log` で確認できる。再発時はまずこのログを取得する。

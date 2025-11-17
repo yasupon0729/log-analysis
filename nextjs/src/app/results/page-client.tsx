@@ -1742,10 +1742,13 @@ export default function ResultsPageClient({
             </a>
           );
         },
-        enableColumnFilter: false,
+        enableColumnFilter: true,
         enableGlobalFilter: true,
+        filterFn: advancedTextFilter,
         meta: {
           cellType: "text",
+          filterVariant: "text",
+          filterPlaceholder: "ファイル名やキーで絞り込み",
         },
       },
       {
