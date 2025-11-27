@@ -176,6 +176,8 @@ const canvasSectionClass = css({
   display: "flex",
   flexDirection: "column",
   gap: "18px",
+  position: "relative",
+  zIndex: 1,
 });
 
 const headingClass = css({
@@ -253,6 +255,8 @@ const queuePanelClass = css({
   boxShadow: "0 28px 60px rgba(2, 6, 23, 0.65)",
   color: "gray.100",
   backdropFilter: "blur(8px)",
+  position: "relative",
+  zIndex: 5,
 });
 
 const filterSectionClass = css({
@@ -559,6 +563,8 @@ const selectionControlsClass = css({
   display: "flex",
   flexDirection: "column",
   gap: "8px",
+  position: "relative",
+  zIndex: 5,
 });
 
 const selectionButtonsClass = css({
@@ -1691,9 +1697,19 @@ export function AnnotationCanvasClient() {
 
   useEffect(() => {
     if (!isAdditionMode) {
-      handleClearAdditionDraft();
+      if (
+        additionDraftPoints.length > 0 ||
+        additionHoverPointRef.current ||
+        lastAdditionPointRef.current
+      ) {
+        handleClearAdditionDraft();
+      }
     }
-  }, [handleClearAdditionDraft, isAdditionMode]);
+  }, [
+    additionDraftPoints.length,
+    handleClearAdditionDraft,
+    isAdditionMode,
+  ]);
 
   useEffect(() => {
     const controller = new AbortController();

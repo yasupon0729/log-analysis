@@ -145,9 +145,16 @@ export function Sidebar() {
               onMouseEnter={(event) => {
                 if (!expanded) {
                   const rect = event.currentTarget.getBoundingClientRect();
+                  const top = rect.top + rect.height / 2;
+                  if (
+                    tooltip?.label === item.label &&
+                    Math.abs(tooltip.top - top) < 1
+                  ) {
+                    return;
+                  }
                   setTooltip({
                     label: item.label,
-                    top: rect.top + rect.height / 2,
+                    top,
                   });
                 }
               }}
