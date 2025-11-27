@@ -24,13 +24,14 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock* ./
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/.next ./.next
+
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/styled-system ./styled-system
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
 EXPOSE 3729
 
-CMD ["bun", "run", "start"]
+CMD ["bun", "server.js"]

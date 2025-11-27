@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Next.js 15 では serverExternalPackages を使用
+  output: "standalone",
   serverExternalPackages: [
     "pino",
     "pino-pretty",
