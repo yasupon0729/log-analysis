@@ -42,6 +42,12 @@ const navItems: NavItem[] = [
   { id: "users", label: "ユーザー動向", icon: "👥", href: "/users" },
   { id: "annotation", label: "アノテーション", icon: "✏️", href: "/annotation" },
   { id: "results", label: "結果", icon: "🔍", href: "/results" },
+  {
+    id: "recommendation",
+    label: "推薦システム",
+    icon: "💡",
+    href: "/recommendation",
+  },
 
   // 未実装タブは保守のため残しておくが、ナビゲーションには表示しない
   // { id: "dashboard", label: "Dashboard", icon: "📊", href: "/" },

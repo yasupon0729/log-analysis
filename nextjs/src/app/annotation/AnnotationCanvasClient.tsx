@@ -1705,11 +1705,7 @@ export function AnnotationCanvasClient() {
         handleClearAdditionDraft();
       }
     }
-  }, [
-    additionDraftPoints.length,
-    handleClearAdditionDraft,
-    isAdditionMode,
-  ]);
+  }, [additionDraftPoints.length, handleClearAdditionDraft, isAdditionMode]);
 
   useEffect(() => {
     const controller = new AbortController();

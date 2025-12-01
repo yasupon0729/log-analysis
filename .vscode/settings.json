@@ -6,7 +6,9 @@
     "source.fixAll.biome": "explicit",
     "source.organizeImports.biome": "explicit"
   },
-
+  "terminal.integrated.env.osx": {
+    "PROJECT_ROOT": "${workspaceFolder}"
+  },
   // Biome設定
   "biome.enabled": true,
   "biome.configPath": "./biome.json",

@@ -78,6 +78,12 @@
 - PR では動作確認手順、必要な環境変数、UI変更時のスクリーンショットを添付。
 - フォローアップ作業がある場合は PR 説明に明記。
 
+## エージェント設定（Serena連動）
+- AGENTS.md を読み込んだら最初に Serena で `/home/yasunari/KNiT/log-analysis/nextjs` を `activate_project` し、`check_onboarding_performed` でオンボ有無を確認する。
+- サンドボックス／承認ポリシーは `get_current_config` で把握し、昇格が要るコマンドは承認フローを踏む。
+- コード閲覧は `get_symbols_overview` / `find_symbol` / `search_for_pattern` などのシンボリックツールを優先し、必要最小限に読む。ファイル丸読みは例外的な場合のみ。
+- 回答は日本語で行い、既存の設計や README 群を参照して DRY を維持する。
+
 ## コミュニケーション
 - 本リポジトリに関するエージェントからの回答は **必ず日本語** で行うこと。
 - 実装や調査を行う際は `.README` ディレクトリ配下の資料を参照してプロジェクト構成を把握し、構成変更があれば該当 README も適宜更新すること。

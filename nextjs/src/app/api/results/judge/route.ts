@@ -186,8 +186,7 @@ export async function GET(request: Request) {
       analysisId,
       count: uniqueImageUrls.length,
       error,
-      errorMessage:
-        error instanceof Error ? error.message : String(error),
+      errorMessage: error instanceof Error ? error.message : String(error),
     });
     return NextResponse.json(
       {

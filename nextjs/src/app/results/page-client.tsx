@@ -2676,7 +2676,9 @@ function buildJudgeImageSourceKey(
   return `${analysisId}::${sectionKey}::${rowKey}::${sanitized}`;
 }
 
-function addTrailingSlash(value: string | null | undefined): string | undefined {
+function addTrailingSlash(
+  value: string | null | undefined,
+): string | undefined {
   if (!value) {
     return undefined;
   }
