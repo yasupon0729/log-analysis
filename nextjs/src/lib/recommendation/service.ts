@@ -150,3 +150,18 @@ export async function getAiModelByName(
         : undefined,
   };
 }
+
+export async function getAiModelNamesForSync(): Promise<string[]> {
+  const sql = `
+    SELECT ai_model_name AS name
+    FROM image_analysis_aimodel
+    WHERE ai_model_name NOT LIKE 'test%'
+    ORDER BY ai_model_name DESC
+  `;
+
+  const rows = await selectRows<{
+    name: string;
+    constructor: { name: "RowDataPacket" };
+  }>(sql);
+  return rows.map((row) => row.name);
+}

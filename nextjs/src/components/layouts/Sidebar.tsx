@@ -48,6 +48,12 @@ const navItems: NavItem[] = [
     icon: "💡",
     href: "/recommendation",
   },
+  {
+    id: "recommendation-sync",
+    label: "検索システム追加",
+    icon: "➕",
+    href: "/recommendation/sync",
+  },
 
   // 未実装タブは保守のため残しておくが、ナビゲーションには表示しない
   // { id: "dashboard", label: "Dashboard", icon: "📊", href: "/" },
