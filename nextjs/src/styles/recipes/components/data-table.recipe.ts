@@ -230,6 +230,10 @@ export const dataTableCellRecipe = cva({
         color: "text.secondary",
         fontSize: "xs",
       },
+      number: {
+        fontFamily: "mono",
+        textAlign: "right",
+      },
       actions: {
         textAlign: "right",
       },

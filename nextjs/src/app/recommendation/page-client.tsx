@@ -1,6 +1,16 @@
 "use client";
 
+import type { ColumnDef } from "@tanstack/react-table";
+import { useMemo } from "react";
+
+import TanstackTable from "@/components/tanstack-table/TanstackTable";
+import type { CustomColumnMeta } from "@/components/tanstack-table/types";
+import type { AiModel } from "@/lib/recommendation/types";
 import { css } from "@/styled-system/css";
+
+interface RecommendationPageClientProps {
+  aiModels: AiModel[];
+}
 
 const pageClass = css({
   display: "flex",
@@ -28,30 +38,117 @@ const cardClass = css({
   boxShadow: "sm",
 });
 
-export default function RecommendationPageClient() {
+export default function RecommendationPageClient({
+  aiModels,
+}: RecommendationPageClientProps) {
+  const columns = useMemo<ColumnDef<AiModel, unknown>[]>(
+    () => [
+      {
+        accessorKey: "id",
+        header: "ID",
+        meta: {
+          cellType: "number",
+          filterVariant: "text",
+          enableGlobalFilter: false,
+        } as CustomColumnMeta,
+      },
+      {
+        accessorKey: "aiModelName",
+        header: "AIモデル名",
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          enableGlobalFilter: true,
+        } as CustomColumnMeta,
+      },
+      {
+        accessorKey: "customerName",
+        header: "顧客名",
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          enableGlobalFilter: true,
+        } as CustomColumnMeta,
+      },
+      {
+        accessorKey: "aiModelCode",
+        header: "モデルコード",
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          enableGlobalFilter: true,
+        } as CustomColumnMeta,
+      },
+      {
+        accessorKey: "price",
+        header: "価格",
+        meta: {
+          cellType: "number",
+          filterVariant: "text",
+          enableGlobalFilter: false,
+        } as CustomColumnMeta,
+        cell: (info) =>
+          info.getValue<number>().toLocaleString("ja-JP", {
+            style: "currency",
+            currency: "JPY",
+          }),
+      },
+      {
+        accessorKey: "isActive",
+        header: "有効",
+        meta: {
+          cellType: "text",
+          filterVariant: "select",
+          selectOptions: [
+            { value: "true", label: "有効" },
+            { value: "false", label: "無効" },
+          ],
+          enableGlobalFilter: false,
+        } as CustomColumnMeta,
+        cell: (info) => (info.getValue() ? "有効" : "無効"),
+      },
+      {
+        accessorKey: "predictMode",
+        header: "予測モード",
+        meta: {
+          cellType: "text",
+          filterVariant: "text",
+          enableGlobalFilter: false,
+        } as CustomColumnMeta,
+      },
+      {
+        accessorKey: "publishDate",
+        header: "公開日",
+        meta: {
+          cellType: "date",
+          filterVariant: "dateRange",
+          enableGlobalFilter: false,
+        } as CustomColumnMeta,
+        cell: (info) => {
+          const val = info.getValue<Date | string | null>();
+          if (!val) return "-";
+          return new Date(val).toLocaleDateString("ja-JP");
+        },
+      },
+    ],
+    [],
+  );
+
   return (
     <div className={pageClass}>
       <header>
         <h1 className={titleClass}>推薦システム</h1>
         <p className={messageClass}>
-          ログ分析に基づいたセキュリティ対策の推奨事項を表示します。
+          AIモデルデータベースの情報を表示しています。(MySQL)
         </p>
       </header>
 
       <div className={cardClass}>
-        <p>現在、推薦アルゴリズムを構築中です。</p>
-        <p>将来的には以下の機能が提供される予定です：</p>
-        <ul
-          className={css({
-            listStyleType: "disc",
-            paddingLeft: 5,
-            marginTop: 4,
-          })}
-        >
-          <li>異常検知に基づいたアラート</li>
-          <li>セキュリティグループ設定の最適化提案</li>
-          <li>アクセスパターンの分析と推奨ポリシー</li>
-        </ul>
+        <TanstackTable
+          data={aiModels}
+          columns={columns}
+          enableRowSelection={true}
+        />
       </div>
     </div>
   );

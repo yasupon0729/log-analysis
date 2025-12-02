@@ -1,11 +1,15 @@
 import { logger } from "@/lib/logger/server";
+import { getAiModels } from "@/lib/recommendation/service";
+
 import RecommendationPageClient from "./page-client";
 
-export default function RecommendationPage() {
+export default async function RecommendationPage() {
   logger.info("Recommendation page loaded", {
     page: "/recommendation",
     type: "page_load",
   });
 
-  return <RecommendationPageClient />;
+  const aiModels = await getAiModels();
+
+  return <RecommendationPageClient aiModels={aiModels} />;
 }
