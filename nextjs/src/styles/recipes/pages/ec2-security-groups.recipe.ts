@@ -10,6 +10,14 @@ export const securityGroupsHeaderRecipe = cva({
   base: securityGroupsStyles.header,
 });
 
+export const securityGroupsHeaderTitleGroupRecipe = cva({
+  base: securityGroupsStyles.headerTitleGroup,
+});
+
+export const securityGroupsUserIpRecipe = cva({
+  base: securityGroupsStyles.userIp,
+});
+
 export const securityGroupsTitleRecipe = cva({
   base: securityGroupsStyles.title,
 });

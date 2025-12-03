@@ -26,6 +26,8 @@ import {
   securityGroupsFilterGroupRecipe,
   securityGroupsFiltersRecipe,
   securityGroupsHeaderRecipe,
+  securityGroupsHeaderTitleGroupRecipe,
+  securityGroupsUserIpRecipe,
   securityGroupsInputRecipe,
   securityGroupsLabelRecipe,
   securityGroupsLoadingContainerRecipe,
@@ -82,6 +84,20 @@ export default function SecurityGroupsPage() {
   const [selectedVpc, setSelectedVpc] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showOnlyWarnings, setShowOnlyWarnings] = useState(false);
+  const [userIp, setUserIp] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserIp = async () => {
+      try {
+        const res = await fetch("https://api.ipify.org?format=json");
+        const data = await res.json();
+        setUserIp(data.ip);
+      } catch (err) {
+        console.error("Failed to fetch user IP:", err);
+      }
+    };
+    fetchUserIp();
+  }, []);
 
   const fetchSecurityGroups = useCallback(async () => {
     try {
@@ -256,7 +272,12 @@ export default function SecurityGroupsPage() {
   return (
     <div className={securityGroupsContainerRecipe()}>
       <header className={securityGroupsHeaderRecipe()}>
-        <h1 className={securityGroupsTitleRecipe()}>EC2 Security Groups</h1>
+        <div className={securityGroupsHeaderTitleGroupRecipe()}>
+          <h1 className={securityGroupsTitleRecipe()}>EC2 Security Groups</h1>
+          {userIp && (
+            <p className={securityGroupsUserIpRecipe()}>Your IP: {userIp}</p>
+          )}
+        </div>
         <Button onClick={fetchSecurityGroups} variant="solid" size="md">
           🔄 Refresh
         </Button>

@@ -10,6 +10,15 @@ export const securityGroupsStyles = {
     alignItems: "center",
     marginBottom: "2rem",
   },
+  headerTitleGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+  },
+  userIp: {
+    fontSize: "0.875rem",
+    color: "text.secondary",
+  },
   title: {
     fontSize: "2.25rem",
     fontWeight: "bold",
