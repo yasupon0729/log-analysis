@@ -21,17 +21,18 @@ export default async function TestSshPage() {
         <p>以下の環境変数が設定されている必要があります (.env.local):</p>
         <ul>
           <li>
-            <code>SSH_HOST</code>: ホスト名またはIPアドレス
+            <code>SSH_HOST_KNIT02</code>: ホスト名またはIPアドレス
           </li>
           <li>
-            <code>SSH_USERNAME</code>: ユーザー名
+            <code>SSH_USERNAME_KNIT02</code>: ユーザー名
           </li>
           <li>
-            <code>SSH_PRIVATE_KEY_PATH</code>: 秘密鍵のフルパス (例:
+            <code>SSH_PRIVATE_KEY_PATH_KNIT02</code>: 秘密鍵のフルパス (例:
             /home/user/.ssh/id_rsa)
           </li>
           <li>
-            <code>MODEL_JSON_DIR</code>: 対象ディレクトリ (例: /var/www/html)
+            <code>MODEL_JSON_DIR_KNIT02</code>: 対象ディレクトリ (例:
+            /var/www/html)
           </li>
         </ul>
       </div>

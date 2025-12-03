@@ -7,6 +7,8 @@ import { logger } from "@/lib/logger/server";
 
 const log = logger.child({ component: "SshClient" });
 
+export type SshTarget = "KNIT02" | "KNIT03" | "KNIT04";
+
 interface SshConfig {
   host: string;
   port: number;
@@ -14,19 +16,20 @@ interface SshConfig {
   privateKey: string;
 }
 
-async function getSshConfigAsync(): Promise<SshConfig> {
-  const host = process.env.SSH_HOST;
-  const username = process.env.SSH_USERNAME;
-  const privateKeyPath = process.env.SSH_PRIVATE_KEY_PATH;
+async function getSshConfigAsync(target: SshTarget): Promise<SshConfig> {
+  const host = process.env[`SSH_HOST_${target}`];
+  const username = process.env[`SSH_USERNAME_${target}`];
+  const privateKeyPath = process.env[`SSH_PRIVATE_KEY_PATH_${target}`];
+  const port = process.env[`SSH_PORT_${target}`];
 
   if (!host || !username) {
     throw new Error(
-      "SSH_HOST and SSH_USERNAME environment variables are required.",
+      `SSH_HOST_${target} and SSH_USERNAME_${target} environment variables are required.`,
     );
   }
 
   if (!privateKeyPath) {
-    throw new Error("SSH_PRIVATE_KEY_PATH is required.");
+    throw new Error(`SSH_PRIVATE_KEY_PATH_${target} is required.`);
   }
 
   let privateKey = "";
@@ -40,29 +43,32 @@ async function getSshConfigAsync(): Promise<SshConfig> {
 
   return {
     host,
-    port: Number(process.env.SSH_PORT) || 22,
+    port: Number(port) || 22,
     username,
     privateKey,
   };
 }
 
 export async function getRemoteFileList(
+  target: SshTarget = "KNIT02",
   directoryPath?: string,
 ): Promise<string[]> {
-  const targetDir = directoryPath || process.env.MODEL_JSON_DIR;
+  const targetDirEnv = `MODEL_JSON_DIR_${target}`;
+  const targetDir = directoryPath || process.env[targetDirEnv];
+  
   if (!targetDir) {
     throw new Error(
-      "Target directory is not specified (MODEL_JSON_DIR or argument).",
+      `Target directory is not specified (${targetDirEnv} or argument).`,
     );
   }
 
-  const config = await getSshConfigAsync();
+  const config = await getSshConfigAsync(target);
   const conn = new Client();
 
   return new Promise((resolve, reject) => {
     conn
       .on("ready", () => {
-        log.info("SSH Connection ready for listing files");
+        log.info("SSH Connection ready for listing files", { target });
 
         conn.sftp((err, sftp) => {
           if (err) {
@@ -85,7 +91,7 @@ export async function getRemoteFileList(
         });
       })
       .on("error", (err) => {
-        log.error("SSH Connection Error", { error: err });
+        log.error("SSH Connection Error", { target, error: err });
         reject(err);
       })
       .connect(config);
@@ -93,14 +99,17 @@ export async function getRemoteFileList(
 }
 
 export async function uploadFileToRemote(
+  target: SshTarget,
   fileName: string,
   content: string,
   directoryPath?: string,
 ): Promise<void> {
-  const targetDir = directoryPath || process.env.MODEL_JSON_DIR;
+  const targetDirEnv = `MODEL_JSON_DIR_${target}`;
+  const targetDir = directoryPath || process.env[targetDirEnv];
+  
   if (!targetDir) {
     throw new Error(
-      "Target directory is not specified (MODEL_JSON_DIR or argument).",
+      `Target directory is not specified (${targetDirEnv} or argument).`,
     );
   }
 
@@ -109,13 +118,13 @@ export async function uploadFileToRemote(
   // リモート側のパス区切りは常に '/' と仮定 (SSH接続先がLinux/Unix系である前提)
   const remotePath = `${targetDir.replace(/\/$/, "")}/${safeFileName}`;
 
-  const config = await getSshConfigAsync();
+  const config = await getSshConfigAsync(target);
   const conn = new Client();
 
   return new Promise((resolve, reject) => {
     conn
       .on("ready", () => {
-        log.info("SSH Connection ready for upload", { remotePath });
+        log.info("SSH Connection ready for upload", { target, remotePath });
 
         conn.sftp((err, sftp) => {
           if (err) {
@@ -126,13 +135,13 @@ export async function uploadFileToRemote(
           const writeStream = sftp.createWriteStream(remotePath);
 
           writeStream.on("close", () => {
-            log.info("File upload completed", { remotePath });
+            log.info("File upload completed", { target, remotePath });
             conn.end();
             resolve();
           });
 
           writeStream.on("error", (err: unknown) => {
-            log.error("File upload failed", { remotePath, error: err });
+            log.error("File upload failed", { target, remotePath, error: err });
             conn.end();
             reject(err);
           });
@@ -141,7 +150,7 @@ export async function uploadFileToRemote(
         });
       })
       .on("error", (err) => {
-        log.error("SSH Connection Error during upload", { error: err });
+        log.error("SSH Connection Error during upload", { target, error: err });
         reject(err);
       })
       .connect(config);
