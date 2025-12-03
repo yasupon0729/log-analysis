@@ -9,7 +9,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import { SecurityGroupStats } from "@/components/ec2/SecurityGroupStats";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +51,7 @@ import {
   securityGroupsWarningChipRecipe,
   securityGroupsWarningListRecipe,
 } from "@/styles/recipes/pages/ec2-security-groups.recipe";
+import { registerToTmpAction } from "./actions";
 
 interface SecurityGroupsData {
   securityGroups: SecurityGroupWithWarnings[];
@@ -85,6 +86,7 @@ export default function SecurityGroupsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [showOnlyWarnings, setShowOnlyWarnings] = useState(false);
   const [userIp, setUserIp] = useState<string | null>(null);
+  const [isRegistering, startTransition] = useTransition();
 
   useEffect(() => {
     const fetchUserIp = async () => {
@@ -122,6 +124,17 @@ export default function SecurityGroupsPage() {
   useEffect(() => {
     fetchSecurityGroups();
   }, [fetchSecurityGroups]);
+
+  const handleRegisterTmp = () => {
+    if (!userIp) return;
+    startTransition(async () => {
+      const result = await registerToTmpAction(userIp);
+      alert(result.message);
+      if (result.success) {
+        fetchSecurityGroups();
+      }
+    });
+  };
 
   const vpcList = useMemo(() => {
     if (!data) {
@@ -278,9 +291,24 @@ export default function SecurityGroupsPage() {
             <p className={securityGroupsUserIpRecipe()}>Your IP: {userIp}</p>
           )}
         </div>
-        <Button onClick={fetchSecurityGroups} variant="solid" size="md">
-          🔄 Refresh
-        </Button>
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <Button
+            onClick={handleRegisterTmp}
+            variant="outline"
+            size="md"
+            disabled={!userIp || isRegistering}
+            title={
+              !userIp
+                ? "IP fetching..."
+                : "Add 443/22 from your IP to 'tmp' group"
+            }
+          >
+            {isRegistering ? "Registering..." : "Register to tmp"}
+          </Button>
+          <Button onClick={fetchSecurityGroups} variant="solid" size="md">
+            🔄 Refresh
+          </Button>
+        </div>
       </header>
 
       <SecurityGroupStats statistics={data.statistics} />

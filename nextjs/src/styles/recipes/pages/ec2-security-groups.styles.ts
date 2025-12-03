@@ -16,7 +16,7 @@ export const securityGroupsStyles = {
     gap: "0.25rem",
   },
   userIp: {
-    fontSize: "0.875rem",
+    fontSize: "1.25rem",
     color: "text.secondary",
   },
   title: {
