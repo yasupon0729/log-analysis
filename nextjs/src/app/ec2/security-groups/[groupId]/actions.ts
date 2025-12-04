@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 
-import { addInboundRule } from "@/lib/ec2/security-groups";
+import {
+  addInboundRule,
+  removeInboundRule,
+  removeOutboundRule,
+} from "@/lib/ec2/security-groups";
 import { logger } from "@/lib/logger/server";
 
 export interface AddInboundRuleActionInput {
@@ -72,6 +76,77 @@ export async function addInboundRuleAction(
       groupId: input.groupId,
     });
     return { ok: false, error: message };
+  }
+}
+
+export interface RemoveRuleInput {
+  protocol: string;
+  fromPort?: number;
+  toPort?: number;
+  source: string; // CIDR or Group ID
+}
+
+export async function removeInboundRulesAction(
+  groupId: string,
+  rules: RemoveRuleInput[],
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    if (!groupId) return { ok: false, error: "Group ID is missing" };
+
+    for (const rule of rules) {
+      const source = rule.source.startsWith("sg-")
+        ? { groupId: rule.source }
+        : rule.source;
+
+      const fromPort = rule.fromPort ?? -1; // Default to -1 (all) if undefined, though logic should ensure values
+      const toPort = rule.toPort ?? -1;
+
+      await removeInboundRule({
+        groupId,
+        protocol: rule.protocol,
+        fromPort,
+        toPort,
+        source,
+      });
+    }
+
+    revalidatePath(`/ec2/security-groups/${groupId}`);
+    return { ok: true };
+  } catch (error: any) {
+    logger.error("Failed to remove inbound rules", { error, groupId });
+    return { ok: false, error: error.message };
+  }
+}
+
+export async function removeOutboundRulesAction(
+  groupId: string,
+  rules: RemoveRuleInput[],
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    if (!groupId) return { ok: false, error: "Group ID is missing" };
+
+    for (const rule of rules) {
+      const destination = rule.source.startsWith("sg-")
+        ? { groupId: rule.source }
+        : rule.source;
+
+      const fromPort = rule.fromPort ?? -1;
+      const toPort = rule.toPort ?? -1;
+
+      await removeOutboundRule({
+        groupId,
+        protocol: rule.protocol,
+        fromPort,
+        toPort,
+        destination,
+      });
+    }
+
+    revalidatePath(`/ec2/security-groups/${groupId}`);
+    return { ok: true };
+  } catch (error: any) {
+    logger.error("Failed to remove outbound rules", { error, groupId });
+    return { ok: false, error: error.message };
   }
 }
 

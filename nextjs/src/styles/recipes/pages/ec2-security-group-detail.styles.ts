@@ -210,4 +210,47 @@ export const securityGroupDetailStyles = {
   formMessageSuccess: {
     color: "success",
   },
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2000,
+    backdropFilter: "blur(2px)",
+  },
+  modalContent: {
+    backgroundColor: "surface",
+    padding: "1.5rem",
+    borderRadius: "0.75rem",
+    border: "1px solid",
+    borderColor: "border",
+    width: "100%",
+    maxWidth: "480px",
+    boxShadow: "xl",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1.5rem",
+  },
+  modalTitle: {
+    fontSize: "1.25rem",
+    fontWeight: "600",
+    color: "text.primary",
+  },
+  modalDescription: {
+    fontSize: "0.95rem",
+    color: "text.secondary",
+    lineHeight: "1.6",
+  },
+  modalActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "0.75rem",
+  },
+  tableCheckbox: {
+    width: "1rem",
+    height: "1rem",
+    cursor: "pointer",
+  },
 } as const;

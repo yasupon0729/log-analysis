@@ -132,3 +132,27 @@ export const securityGroupDetailFormCheckboxLabelRecipe = cva({
 export const securityGroupDetailFormHelperButtonRecipe = cva({
   base: securityGroupDetailStyles.formHelperButton,
 });
+
+export const securityGroupDetailModalOverlayRecipe = cva({
+  base: securityGroupDetailStyles.modalOverlay,
+});
+
+export const securityGroupDetailModalContentRecipe = cva({
+  base: securityGroupDetailStyles.modalContent,
+});
+
+export const securityGroupDetailModalTitleRecipe = cva({
+  base: securityGroupDetailStyles.modalTitle,
+});
+
+export const securityGroupDetailModalDescriptionRecipe = cva({
+  base: securityGroupDetailStyles.modalDescription,
+});
+
+export const securityGroupDetailModalActionsRecipe = cva({
+  base: securityGroupDetailStyles.modalActions,
+});
+
+export const securityGroupDetailTableCheckboxRecipe = cva({
+  base: securityGroupDetailStyles.tableCheckbox,
+});
