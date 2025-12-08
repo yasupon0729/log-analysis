@@ -84,6 +84,7 @@ export interface RemoveRuleInput {
   fromPort?: number;
   toPort?: number;
   source: string; // CIDR or Group ID
+  description?: string;
 }
 
 export async function removeInboundRulesAction(
@@ -108,10 +109,20 @@ export async function removeInboundRulesAction(
         toPort,
         source,
       });
+
+      logger.info("Inbound rule removed", {
+        groupId,
+        protocol: rule.protocol,
+        fromPort,
+        toPort,
+        source: rule.source,
+        description: rule.description,
+      });
     }
 
     revalidatePath(`/ec2/security-groups/${groupId}`);
     return { ok: true };
+    // biome-ignore lint/suspicious/noExplicitAny: <>
   } catch (error: any) {
     logger.error("Failed to remove inbound rules", { error, groupId });
     return { ok: false, error: error.message };
@@ -140,10 +151,20 @@ export async function removeOutboundRulesAction(
         toPort,
         destination,
       });
+
+      logger.info("Outbound rule removed", {
+        groupId,
+        protocol: rule.protocol,
+        fromPort,
+        toPort,
+        destination: rule.source,
+        description: rule.description,
+      });
     }
 
     revalidatePath(`/ec2/security-groups/${groupId}`);
     return { ok: true };
+    // biome-ignore lint/suspicious/noExplicitAny: <>
   } catch (error: any) {
     logger.error("Failed to remove outbound rules", { error, groupId });
     return { ok: false, error: error.message };

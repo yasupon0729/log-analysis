@@ -99,6 +99,7 @@ interface RuleTableRow {
     fromPort?: number;
     toPort?: number;
     source: string;
+    description?: string;
   };
 }
 
@@ -1039,6 +1040,7 @@ function ruleToRows(rule: SecurityGroupRule): RuleTableRow[] {
     protocol: rule.protocol,
     fromPort: rule.fromPort,
     toPort: rule.toPort,
+    description: rule.description,
   };
 
   const rows: RuleTableRow[] = [];
@@ -1046,7 +1048,11 @@ function ruleToRows(rule: SecurityGroupRule): RuleTableRow[] {
   if (rule.ipRanges?.length) {
     for (const range of rule.ipRanges) {
       if (!range?.cidr) continue;
-      const raw = { ...rawBase, source: range.cidr };
+      const raw = {
+        ...rawBase,
+        source: range.cidr,
+        description: range.description,
+      };
       rows.push({
         id: JSON.stringify(raw), // simple unique id
         name,
@@ -1064,7 +1070,11 @@ function ruleToRows(rule: SecurityGroupRule): RuleTableRow[] {
   if (rule.ipv6Ranges?.length) {
     for (const range of rule.ipv6Ranges) {
       if (!range?.cidr) continue;
-      const raw = { ...rawBase, source: range.cidr };
+      const raw = {
+        ...rawBase,
+        source: range.cidr,
+        description: range.description,
+      };
       rows.push({
         id: JSON.stringify(raw),
         name,
@@ -1082,7 +1092,11 @@ function ruleToRows(rule: SecurityGroupRule): RuleTableRow[] {
   if (rule.securityGroups?.length) {
     for (const peer of rule.securityGroups) {
       if (!peer?.groupId) continue;
-      const raw = { ...rawBase, source: peer.groupId };
+      const raw = {
+        ...rawBase,
+        source: peer.groupId,
+        description: peer.description,
+      };
       rows.push({
         id: JSON.stringify(raw),
         name,
