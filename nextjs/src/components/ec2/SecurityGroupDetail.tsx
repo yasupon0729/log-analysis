@@ -117,8 +117,7 @@ function getSortIndicator(direction: false | "asc" | "desc") {
 
 export function SecurityGroupDetail({ group }: Props) {
   const router = useRouter();
-  const isDeletionEnabled =
-    group.groupName === "tmp" || group.tags?.Name === "tmp";
+  const isDeletionEnabled = true;
 
   const inboundRows = useMemo(
     () => flattenRules(group.inboundRules),
@@ -136,7 +135,7 @@ export function SecurityGroupDetail({ group }: Props) {
       cols.unshift(createSelectionColumn());
     }
     return cols;
-  }, [isDeletionEnabled]);
+  }, []); // isDeletionEnabled を削除
 
   const outboundColumns = useMemo(() => {
     const cols: ColumnDef<RuleTableRow>[] = createRuleColumns("Destination");
@@ -144,7 +143,7 @@ export function SecurityGroupDetail({ group }: Props) {
       cols.unshift(createSelectionColumn());
     }
     return cols;
-  }, [isDeletionEnabled]);
+  }, []); // isDeletionEnabled を削除
 
   const [protocol, setProtocol] = useState<"tcp" | "udp" | "all">("tcp");
   const [fromPort, setFromPort] = useState("443");
