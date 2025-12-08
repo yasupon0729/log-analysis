@@ -20,7 +20,7 @@ const rollOptions = isDevelopment
       mkdir: true,
       extension: ".log",
       limit: {
-        count: 14,
+        count: 50,
       },
     };
 

@@ -56,7 +56,7 @@ const pinoLogger = isDevelopment
           mkdir: true,
           extension: ".log",
           limit: {
-            count: 14, // 14世代保持
+            count: 50, // 14世代保持
           },
         },
       },
