@@ -21,39 +21,46 @@ const pinoLogger = isDevelopment
               translateTime: "yyyy-mm-dd HH:MM:ss.l",
             },
           },
-          // ファイル出力
+          // ファイル出力 (ローテーション付き)
           {
-            target: "pino/file",
+            target: "pino-roll",
             level: "debug",
             options: {
-              destination: join(process.cwd(), "logs", "server", "app-dev.log"),
+              file: join(process.cwd(), "logs", "server", "app-dev"),
+              frequency: "daily",
               mkdir: true,
+              extension: ".log",
             },
           },
         ],
       },
     })
-  : // 本番環境: シンプルな設定（トランスポートなし）
-    pino(
-      {
-        level: process.env.LOG_LEVEL || "info",
-        formatters: {
-          level: (label) => ({ level: label }),
-          bindings: () => ({
-            pid: process.pid,
-            hostname: process.env.HOSTNAME || "localhost",
-            environment: "production",
-          }),
-        },
-        timestamp: pino.stdTimeFunctions.isoTime,
+  : // 本番環境: ローテーション付きファイル出力
+    pino({
+      level: process.env.LOG_LEVEL || "info",
+      formatters: {
+        level: (label) => ({ level: label }),
+        bindings: () => ({
+          pid: process.pid,
+          hostname: process.env.HOSTNAME || "localhost",
+          environment: "production",
+        }),
       },
-      // 本番環境では直接ファイル出力
-      pino.destination({
-        dest: join(process.cwd(), "logs", "server", "app-prod.log"),
-        sync: false,
-        mkdir: true,
-      }),
-    );
+      timestamp: pino.stdTimeFunctions.isoTime,
+      transport: {
+        target: "pino-roll",
+        options: {
+          file: join(process.cwd(), "logs", "server", "app-prod"),
+          frequency: "daily",
+          size: "10m", // 10MB
+          mkdir: true,
+          extension: ".log",
+          limit: {
+            count: 14, // 14世代保持
+          },
+        },
+      },
+    });
 
 // ログレベルのエイリアス
 export const serverLogger = pinoLogger;
@@ -68,6 +75,6 @@ export const logger = new LoggerWrapper(pinoLogger, {
 });
 
 // テスト用ログ（新しいフォーマット）
-logger.info("Logger initialized", {
+logger.info("Logger initialized with rotation", {
   logLevel: pinoLogger.level,
 });
