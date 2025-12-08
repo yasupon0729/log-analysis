@@ -5,33 +5,28 @@ import { logger } from "@/lib/logger/server";
 
 // クライアントログ用の専用 logger インスタンス（シングルトン）
 const isDevelopment = process.env.NODE_ENV === "development";
-
-const rollOptions = isDevelopment
-  ? {
-      file: join(process.cwd(), "logs", "client", "app-dev"),
-      frequency: "daily",
-      mkdir: true,
-      extension: ".log",
-    }
-  : {
-      file: join(process.cwd(), "logs", "client", "app-prod"),
-      frequency: "daily",
-      size: "10m",
-      mkdir: true,
-      extension: ".log",
-      limit: {
-        count: 50,
-      },
-    };
-
 const clientFileLogger = pino(
   {
     // timeフィールドを適切にフォーマット
     timestamp: pino.stdTimeFunctions.isoTime,
   },
   pino.transport({
-    target: "pino-roll",
-    options: rollOptions,
+    targets: [
+      // クライアントログ専用ファイル（シンプルなファイル出力）
+      {
+        target: "pino/file",
+        level: isDevelopment ? "debug" : "info",
+        options: {
+          destination: join(
+            process.cwd(),
+            "logs",
+            "client",
+            `app-${isDevelopment ? "dev" : "prod"}.log`,
+          ),
+          mkdir: true,
+        },
+      },
+    ],
   }),
 );
 

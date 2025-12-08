@@ -45,3 +45,5 @@ styled-system
 styled-system-studio
 /src/generated/prisma
 keys/
+
+/**/*/*.log
