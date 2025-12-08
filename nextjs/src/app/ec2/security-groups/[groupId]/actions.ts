@@ -1,13 +1,38 @@
 "use server";
 
+import { join } from "node:path";
 import { revalidatePath } from "next/cache";
+import pino from "pino";
 
 import {
   addInboundRule,
   removeInboundRule,
   removeOutboundRule,
 } from "@/lib/ec2/security-groups";
-import { logger } from "@/lib/logger/server";
+
+// import { logger } from "@/lib/logger/server"; // アプリケーション全体のloggerはそのまま使用
+
+// セキュリティグループ操作用の専用 logger インスタンス
+const isDevelopment = process.env.NODE_ENV === "development";
+const deleteSecurityLogger = pino(
+  {
+    level: process.env.LOG_LEVEL || "info", // デフォルトレベルをinfoに設定
+    formatters: {
+      level: (label) => ({ level: label }),
+      bindings: () => ({
+        pid: process.pid,
+        hostname: process.env.HOSTNAME || "localhost",
+        environment: isDevelopment ? "development" : "production",
+      }),
+    },
+    timestamp: pino.stdTimeFunctions.isoTime,
+  },
+  pino.destination({
+    dest: join(process.cwd(), "logs", "delete-security.log"),
+    sync: false, // 非同期書き込み
+    mkdir: true,
+  }),
+);
 
 export interface AddInboundRuleActionInput {
   groupId: string;
@@ -60,7 +85,8 @@ export async function addInboundRuleAction(
     });
 
     revalidatePath(`/ec2/security-groups/${input.groupId}`);
-    logger.info("Inbound rule added", {
+    deleteSecurityLogger.info({
+      msg: "Inbound rule added",
       groupId: input.groupId,
       protocol,
       cidr,
@@ -71,7 +97,8 @@ export async function addInboundRuleAction(
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    logger.error("Failed to add inbound rule", {
+    deleteSecurityLogger.error({
+      msg: "Failed to add inbound rule",
       error: message,
       groupId: input.groupId,
     });
@@ -102,20 +129,26 @@ export async function removeInboundRulesAction(
       const fromPort = rule.fromPort ?? -1; // Default to -1 (all) if undefined, though logic should ensure values
       const toPort = rule.toPort ?? -1;
 
-      await removeInboundRule({
-        groupId,
-        protocol: rule.protocol,
-        fromPort,
-        toPort,
-        source,
-      });
+              await removeInboundRule({
+                groupId,
+                protocol: rule.protocol,
+                fromPort,
+                toPort,
+                source,
+              });
+      deleteSecurityLogger.info({
+        msg: "Inbound rule removed",
 
-      logger.info("Inbound rule removed", {
         groupId,
+
         protocol: rule.protocol,
+
         fromPort,
+
         toPort,
+
         source: rule.source,
+
         description: rule.description,
       });
     }
@@ -124,7 +157,11 @@ export async function removeInboundRulesAction(
     return { ok: true };
     // biome-ignore lint/suspicious/noExplicitAny: <>
   } catch (error: any) {
-    logger.error("Failed to remove inbound rules", { error, groupId });
+    deleteSecurityLogger.error({
+      msg: "Failed to remove inbound rules",
+      error,
+      groupId,
+    });
     return { ok: false, error: error.message };
   }
 }
@@ -152,12 +189,19 @@ export async function removeOutboundRulesAction(
         destination,
       });
 
-      logger.info("Outbound rule removed", {
+      deleteSecurityLogger.info({
+        msg: "Outbound rule removed",
+
         groupId,
+
         protocol: rule.protocol,
+
         fromPort,
+
         toPort,
+
         destination: rule.source,
+
         description: rule.description,
       });
     }
@@ -166,7 +210,11 @@ export async function removeOutboundRulesAction(
     return { ok: true };
     // biome-ignore lint/suspicious/noExplicitAny: <>
   } catch (error: any) {
-    logger.error("Failed to remove outbound rules", { error, groupId });
+    deleteSecurityLogger.error({
+      msg: "Failed to remove outbound rules",
+      error,
+      groupId,
+    });
     return { ok: false, error: error.message };
   }
 }
