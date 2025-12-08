@@ -22,6 +22,7 @@ import {
 } from "@/app/ec2/security-groups/[groupId]/actions";
 import { AlertBanner } from "@/components/ui/AlertBanner";
 import { Button } from "@/components/ui/Button";
+import { Portal } from "@/components/ui/Portal";
 import type {
   SecurityGroupWarning,
   SecurityGroupWithWarnings,
@@ -751,16 +752,18 @@ export function SecurityGroupDetail({ group }: Props) {
       </section>
 
       {deleteModalOpen && (
-        <DeleteConfirmationModal
-          count={
-            deleteTarget === "inbound"
-              ? Object.keys(inboundRowSelection).length
-              : Object.keys(outboundRowSelection).length
-          }
-          isPending={isPending}
-          onCancel={() => setDeleteModalOpen(false)}
-          onConfirm={handleConfirmDelete}
-        />
+        <Portal>
+          <DeleteConfirmationModal
+            count={
+              deleteTarget === "inbound"
+                ? Object.keys(inboundRowSelection).length
+                : Object.keys(outboundRowSelection).length
+            }
+            isPending={isPending}
+            onCancel={() => setDeleteModalOpen(false)}
+            onConfirm={handleConfirmDelete}
+          />
+        </Portal>
       )}
     </div>
   );
