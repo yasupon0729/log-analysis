@@ -11,7 +11,7 @@ services:
       - PORT=3729
       - NODE_ENV=production
     volumes:
-      - ./nextjs/logs/container:/app/logs
+      - ./logs/container:/app/logs
       - ./keys:/app/keys:ro # SSH秘密鍵を読み取り専用でマウント
     extra_hosts:
       - "host.docker.internal:host-gateway"
