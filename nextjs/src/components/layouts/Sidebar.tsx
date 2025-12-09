@@ -49,6 +49,12 @@ const navItems: NavItem[] = [
     href: "/recommendation",
   },
   {
+    id: "system-logs",
+    label: "システムログ",
+    icon: "💻",
+    href: "/system-logs",
+  },
+  {
     id: "recommendation-sync",
     label: "検索システム追加",
     icon: "➕",

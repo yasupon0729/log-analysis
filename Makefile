@@ -9,12 +9,14 @@
 #   make build           # イメージをビルド
 #   make build-up        # ビルドしてから起動
 #   make build-no-cache  # キャッシュを使わずにビルド
+#   make output-log      # 直近1時間のログをファイル出力
+#   make output-log 24   # 直近24時間のログをファイル出力
 # ============================================
 
 COMPOSE_FILE=nextjs/docker-compose.yml
 DOCKER_COMPOSE=docker compose -f $(COMPOSE_FILE)
 
-.PHONY: up down build build-up build-no-cache build-no-cache-up up-with-tunnel rebuild-up
+.PHONY: up down build build-up build-no-cache build-no-cache-up up-with-tunnel rebuild-up output-log
 
 # コンテナをバックグラウンドで起動
 up:
@@ -65,9 +67,34 @@ ps:
 logs:
 	$(DOCKER_COMPOSE) logs -f
 
+# ログ出力用設定
+LOG_EXPORT_DIR=logs_export
+TIMESTAMP=$(shell date +%Y%m%d_%H%M%S)
+DEFAULT_DURATION=1h
+
+# make output-log [duration] の引数処理
+ifeq (output-log,$(firstword $(MAKECMDGOALS)))
+  # 2番目の引数を取得 (例: 24)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  # 引数がなければデフォルト、あれば 'h' を付与
+  ifeq ($(RUN_ARGS),)
+    DURATION := $(DEFAULT_DURATION)
+  else
+    DURATION := $(RUN_ARGS)h
+  endif
+  # 引数をターゲットとして解釈しないようにダミールールを定義
+  $(eval $(RUN_ARGS):;@:)
+endif
+
+# ログファイル出力
+output-log:
+	@mkdir -p $(LOG_EXPORT_DIR)
+	@echo "Exporting logs (since $(DURATION)) to $(LOG_EXPORT_DIR)/app_logs_$(TIMESTAMP).log ..."
+	$(DOCKER_COMPOSE) logs --no-color --since $(DURATION) > $(LOG_EXPORT_DIR)/app_logs_$(TIMESTAMP).log
+	@echo "Done. File saved to: $(LOG_EXPORT_DIR)/app_logs_$(TIMESTAMP).log"
+
 # コンテナを停止・削除してから、トンネルサービスと共に起動
 rebuild-up:
 	$(MAKE) down
 	$(MAKE) build
 	$(MAKE) up-with-tunnel
-

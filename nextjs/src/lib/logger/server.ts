@@ -47,12 +47,17 @@ const pinoLogger = isDevelopment
         },
         timestamp: pino.stdTimeFunctions.isoTime,
       },
-      // 本番環境では直接ファイル出力
-      pino.destination({
-        dest: join(process.cwd(), "logs", "server", "app-prod.log"),
-        sync: false,
-        mkdir: true,
-      }),
+      // 本番環境では標準出力とファイルの両方に出力
+      pino.multistream([
+        { stream: process.stdout },
+        {
+          stream: pino.destination({
+            dest: join(process.cwd(), "logs", "server", "app-prod.log"),
+            sync: false,
+            mkdir: true,
+          }),
+        },
+      ]),
     );
 
 // ログレベルのエイリアス
