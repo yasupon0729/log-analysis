@@ -1,44 +1,80 @@
 import { logger } from "@/lib/logger/server";
 import { getAiModelNamesForSync } from "@/lib/recommendation/service";
-import { getRemoteFileList } from "@/lib/ssh/client";
+import { ALL_TARGETS, getRemoteFileList, type SshTarget } from "@/lib/ssh/client";
 import { css } from "@/styled-system/css";
-import { SyncTable } from "./SyncTable";
+import { SyncTable, type SyncTableRow } from "./SyncTable";
 
 export const dynamic = "force-dynamic"; // 常に最新の状態を取得
 
 export default async function SyncPage() {
   let dbModelNames: string[] = [];
-  let remoteFiles: string[] = [];
+  const remoteStatus: Record<string, Record<SshTarget, boolean>> = {};
   let error = null;
 
   try {
-    // 並列でデータ取得
-    const [dbNames, files] = await Promise.all([
-      getAiModelNamesForSync(),
-      getRemoteFileList(),
+    // DBのモデル名取得
+    const dbNamesPromise = getAiModelNamesForSync();
+
+    // 各サーバーのファイル一覧取得 (並列実行)
+    const remoteFilesPromises = ALL_TARGETS.map(async (target) => {
+        try {
+            const files = await getRemoteFileList(target);
+            return { target, files, success: true };
+        } catch (e) {
+            logger.error(`Failed to get file list from ${target}`, { error: e });
+            return { target, files: [], success: false, error: e };
+        }
+    });
+
+    const [dbNames, ...remoteResults] = await Promise.all([
+      dbNamesPromise,
+      ...remoteFilesPromises,
     ]);
+
     dbModelNames = dbNames;
-    remoteFiles = files;
+
+    // リモート状況の整理
+    // まず全モデル名のエントリを初期化
+    for (const name of dbModelNames) {
+        remoteStatus[name] = {
+            KNIT02: false,
+            KNIT03: false,
+            KNIT04: false,
+        };
+    }
+
+    // 取得したファイル一覧を反映
+    for (const res of remoteResults) {
+        if (!res.success) {
+            // 取得失敗した場合は全モデルで false (またはエラー状態を示すUIが必要かもだが、一旦なし)
+            continue;
+        }
+        
+        // 拡張子を除去したSetを作成
+        const fileSet = new Set(
+            res.files
+                .filter((f) => f.endsWith(".json"))
+                .map((f) => f.replace(/\.json$/, ""))
+        );
+
+        // DBにあるモデルについて存在確認
+        for (const name of dbModelNames) {
+            if (fileSet.has(name)) {
+                remoteStatus[name][res.target as SshTarget] = true;
+            }
+        }
+    }
+
   } catch (e) {
     logger.error("Failed to load data for sync page", { error: e });
     error = e instanceof Error ? e.message : String(e);
   }
 
-  // リモートファイルの拡張子を除去してSetにする
-  const remoteModelSet = new Set(
-    remoteFiles
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => f.replace(/\.json$/, ""))
-  );
-
-  // マッピングデータを作成
-  const rows = dbModelNames.map((name) => {
-    const exists = remoteModelSet.has(name);
-    return {
-      name,
-      exists,
-    };
-  });
+  // テーブル用データ作成
+  const rows: SyncTableRow[] = dbModelNames.map((name) => ({
+    name,
+    status: remoteStatus[name] || { KNIT02: false, KNIT03: false, KNIT04: false },
+  }));
 
   return (
     <div className={containerClass}>
