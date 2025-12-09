@@ -35,19 +35,13 @@ const navItems: NavItem[] = [
   {
     id: "security-groups",
     label: "セキュリティグループ",
-    icon: "🛡️",
+    icon: "㊙️",
     href: "/ec2/security-groups",
   },
   { id: "logs", label: "ログ", icon: "📝", href: "/upload" },
   { id: "users", label: "ユーザー動向", icon: "👥", href: "/users" },
   { id: "annotation", label: "アノテーション", icon: "✏️", href: "/annotation" },
-  { id: "results", label: "結果", icon: "🔍", href: "/results" },
-  {
-    id: "recommendation",
-    label: "推薦システム",
-    icon: "💡",
-    href: "/recommendation",
-  },
+  { id: "results", label: "結果", icon: "👽", href: "/results" },
   {
     id: "system-logs",
     label: "システムログ",
