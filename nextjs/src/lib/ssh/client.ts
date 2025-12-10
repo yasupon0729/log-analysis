@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger/server";
 const log = logger.child({ component: "SshClient" });
 
 export type SshTarget = "KNIT02" | "KNIT03" | "KNIT04";
+export const ALL_TARGETS: SshTarget[] = ["KNIT02", "KNIT03", "KNIT04"];
 
 interface SshConfig {
   host: string;
@@ -151,6 +152,58 @@ export async function uploadFileToRemote(
       })
       .on("error", (err) => {
         log.error("SSH Connection Error during upload", { target, error: err });
+        reject(err);
+      })
+      .connect(config);
+  });
+}
+
+export async function deleteRemoteFile(
+  target: SshTarget,
+  fileName: string,
+  directoryPath?: string,
+): Promise<void> {
+  const targetDirEnv = `MODEL_JSON_DIR_${target}`;
+  const targetDir = directoryPath || process.env[targetDirEnv];
+
+  if (!targetDir) {
+    throw new Error(
+      `Target directory is not specified (${targetDirEnv} or argument).`,
+    );
+  }
+
+  const safeFileName = path.basename(fileName);
+  const remotePath = `${targetDir.replace(/\/$/, "")}/${safeFileName}`;
+
+  const config = await getSshConfigAsync(target);
+  const conn = new Client();
+
+  return new Promise((resolve, reject) => {
+    conn
+      .on("ready", () => {
+        log.info("SSH Connection ready for delete", { target, remotePath });
+
+        conn.sftp((err, sftp) => {
+          if (err) {
+            conn.end();
+            return reject(err);
+          }
+
+          sftp.unlink(remotePath, (err) => {
+            if (err) {
+              log.error("File deletion failed", { target, remotePath, error: err });
+              conn.end();
+              return reject(err);
+            }
+
+            log.info("File deletion completed", { target, remotePath });
+            conn.end();
+            resolve();
+          });
+        });
+      })
+      .on("error", (err) => {
+        log.error("SSH Connection Error during delete", { target, error: err });
         reject(err);
       })
       .connect(config);

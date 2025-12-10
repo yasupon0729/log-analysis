@@ -46,7 +46,7 @@ const tableWrapperClass = css({
   gap: 2,
 });
 
-const dateFormatter = new Intl.DateTimeFormat(undefined, {
+const dateFormatter = new Intl.DateTimeFormat("ja-JP", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -54,6 +54,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   second: "2-digit",
   hour12: false,
+  timeZone: "Asia/Tokyo",
 });
 
 const timeSortingFn: SortingFn<LogRow> = (rowA, rowB, columnId) => {
