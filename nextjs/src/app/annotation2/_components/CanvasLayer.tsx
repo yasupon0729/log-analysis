@@ -56,10 +56,8 @@ export function CanvasLayer({
       }
 
       regions.forEach((region) => {
-        if (removedIds.has(region.id)) {
-          return;
-        }
-
+        // 削除済みのアノテーションも描画する（色を変える）
+        const isRemoved = removedIds.has(region.id);
         const isFiltered = filteredIds.has(region.id);
         const isHovered = region.id === hoveredId;
 
@@ -67,10 +65,18 @@ export function CanvasLayer({
         let strokeStyle: string | null = null;
         let lineWidth = 1;
 
-        if (isFiltered) {
+        if (isRemoved) {
+          // 削除済み: 赤色
+          fillStyle = isHovered
+            ? "rgba(220, 38, 38, 0.45)" // ホバー時は濃い赤
+            : "rgba(248, 113, 113, 0.35)"; // 通常時は薄い赤
+          strokeStyle = "#dc2626"; // 赤色の枠線
+        } else if (isFiltered) {
+          // フィルタリング済み: 薄いグレー（非表示に近い）
           fillStyle = "rgba(200, 200, 200, 0.1)";
           strokeStyle = "rgba(200, 200, 200, 0.2)";
         } else {
+          // 通常: 青色
           fillStyle = isHovered
             ? "rgba(37, 99, 235, 0.4)"
             : "rgba(37, 99, 235, 0.15)";
@@ -132,8 +138,8 @@ export function CanvasLayer({
     let foundId: number | null = null;
     for (let i = regions.length - 1; i >= 0; i--) {
       const region = regions[i];
-      // 削除済み領域は当たり判定から除外
-      if (removedIds.has(region.id)) continue;
+      // 削除済み領域も再クリックで復活させるために当たり判定の対象にする
+      // if (removedIds.has(region.id)) continue;
 
       // Point-in-Polygon: レイキャスティングアルゴリズム
       // 領域の外側に水平なレイを飛ばし、交差回数を数えます。奇数回なら内部。

@@ -26,12 +26,14 @@ const INPUT_DIR = path.join(process.cwd(), "src/app/annotation2/input");
  *    といった統合されたデータ構造が完成します。
  * 4. 各メトリクス (例: 面積、円相当径など) の最小値と最大値を計算し、
  *    `MetricStat` オブジェクトの配列として返します。これはフィルタリングUIのスライダーの範囲設定などに利用されます。
+ * 5. `remove.json` (存在する場合) を読み込み、削除済みのアノテーションIDのリストを返します。
  *
- * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; }>}
+ * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; removedIds: number[]; }>}
  */
 export async function loadAnnotationData(): Promise<{
   regions: AnnotationRegion[];
   stats: MetricStat[];
+  removedIds: number[];
 }> {
   // 1. segmentation.json (COCO Format) の読み込み
   // 画像内のアノテーション領域のポリゴンデータとバウンディングボックスを取得します。
@@ -69,7 +71,21 @@ export async function loadAnnotationData(): Promise<{
     csvMap.set(id, metrics);
   }
 
-  // 3. データ結合 & メトリクス統計情報の計算
+  // 3. remove.json の読み込み (削除済みIDのリスト)
+  let removedIds: number[] = [];
+  try {
+    const removeJsonPath = path.join(INPUT_DIR, "remove.json");
+    const removeJsonContent = await fs.readFile(removeJsonPath, "utf-8");
+    const removeData = JSON.parse(removeJsonContent);
+    if (Array.isArray(removeData.removedIds)) {
+      removedIds = removeData.removedIds;
+    }
+  } catch (error) {
+    // ファイルが存在しない場合やパースエラーの場合は、空のリストとして扱う（初回起動時など）
+    // エラーログは出さない（正常系）
+  }
+
+  // 4. データ結合 & メトリクス統計情報の計算
   // COCOデータとCSVデータを結合し、描画とフィルタリングに使用するAnnotationRegionの配列を生成します。
   // また、各メトリクスの最小値と最大値を追跡し、統計情報として返します。
   const regions: AnnotationRegion[] = [];
@@ -145,5 +161,6 @@ export async function loadAnnotationData(): Promise<{
   return {
     regions,
     stats,
+    removedIds,
   };
 }

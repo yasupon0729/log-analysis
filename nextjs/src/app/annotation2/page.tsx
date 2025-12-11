@@ -14,7 +14,7 @@ import { loadAnnotationData } from "./_lib/data-loader";
 // Next.jsのServer Componentsとして動作します。
 export default async function AnnotationPageV2() {
   // 1. データローダーを呼び出し、アノテーション領域とメトリクス統計データを取得
-  const { regions, stats } = await loadAnnotationData();
+  const { regions, stats, removedIds } = await loadAnnotationData();
 
   // 2. 画像ファイル (origin.png) の読み込みとBase64変換
   // クライアント側でCanvasに描画するためにBase64形式で渡します。
@@ -23,7 +23,7 @@ export default async function AnnotationPageV2() {
     process.cwd(),
     "src/app/annotation2/input/origin.png",
   );
-
+  
   let imageBase64 = "";
   try {
     const imageBuffer = await fs.readFile(imagePath);
@@ -39,6 +39,7 @@ export default async function AnnotationPageV2() {
       initialRegions={regions}
       stats={stats}
       imageBase64={imageBase64}
+      initialRemovedIds={removedIds}
     />
   );
 }
