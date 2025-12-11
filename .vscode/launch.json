@@ -7,7 +7,7 @@
       "request": "launch",
       "cwd": "${workspaceFolder}/nextjs",
       "runtimeExecutable": "${workspaceFolder}/nextjs/node_modules/.bin/next",
-      "runtimeArgs": ["dev"],
+      "runtimeArgs": ["dev", "--port", "3729"],
       "skipFiles": ["<node_internals>/**"],
       "env": {
         "NODE_OPTIONS": "--inspect"

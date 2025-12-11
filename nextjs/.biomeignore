@@ -1,5 +1,27 @@
-node_modules/
+# Biome が無視するファイル・ディレクトリ
+# これらのファイルは Biome のフォーマット、Lint、LSP、VS Code 拡張機能の対象外となります。
+
+# Next.js のビルド成果物
 .next/
+
+# Node.js の依存関係
+node_modules/
+bun.lock
+
+# その他の自動生成ファイル
 styled-system/
-.next/**
-styled-system/**
+
+# プロジェクトのルートにある README.md は無視
+README.md
+
+# Next.js の設定ファイル (Biome のフォーマットを適用すると問題が起きる可能性)
+next.config.ts
+
+# Biome自身の設定ファイル (無限ループ防止)
+biome.json
+
+# gitignoreで管理されているものを無視
+.gitignore
+
+# 意図的に無視するファイル
+src/app/annotation2/input/segmentation.json
