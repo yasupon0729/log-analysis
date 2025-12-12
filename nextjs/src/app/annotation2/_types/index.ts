@@ -59,3 +59,21 @@ export interface CocoData {
   annotations: CocoAnnotation[];
   // categories, licenses など、利用しないフィールドは省略
 }
+
+// フィルタールールの定義
+// スタック型のフィルター設定で使用されます。
+export interface FilterRule {
+  id: string; // ルールを一意に識別するID (UI操作用: Date.now()等で生成)
+  metric: string; // 対象メトリクス (MetricStat.key)
+  mode: "include" | "exclude"; // "include": 範囲内を表示(範囲外を除外), "exclude": 範囲内を除外(範囲外を表示)
+  min: number; // 範囲の最小値
+  max: number; // 範囲の最大値
+  enabled: boolean; // このルールが有効かどうか
+}
+
+// 保存用JSON (filtered.json) の構造
+export interface FilterConfig {
+  version: number;
+  rules: FilterRule[];
+  excludedIds: number[]; // このルールセットによって最終的に除外されたIDのリスト
+}

@@ -97,19 +97,26 @@ export function CanvasLayer({
         let strokeStyle: string | null = null;
         let lineWidth = 1 / transform.scale; // ズームしても線の太さを一定に見せるため
 
+        ctx.setLineDash([]);
+
         if (isRemoved) {
+          // 削除済み: 赤色 (ユーザー要望: removeのものは赤く、最優先)
           fillStyle = isHovered
-            ? "rgba(220, 38, 38, 0.45)"
-            : "rgba(248, 113, 113, 0.35)";
-          strokeStyle = "#dc2626";
+            ? "rgba(239, 68, 68, 0.6)"
+            : "rgba(239, 68, 68, 0.35)"; // Red 500
+          strokeStyle = "#dc2626"; // Red 600
         } else if (isFiltered) {
-          fillStyle = "rgba(200, 200, 200, 0.1)";
-          strokeStyle = "rgba(200, 200, 200, 0.2)";
+          // フィルタ対象: 枠線を目立たなくし、塗りつぶしはほぼ無し
+          fillStyle = "rgba(100, 116, 139, 0.05)"; // Slate 500
+          strokeStyle = "rgba(148, 163, 184, 0.6)"; // Slate 400
+          // 点線にする (ズームに合わせてピッチ調整)
+          ctx.setLineDash([2 / transform.scale, 4 / transform.scale]);
         } else {
+          // 通常: 鮮やかなシアン/水色 (暗い背景でも明るい背景でも見やすい)
           fillStyle = isHovered
-            ? "rgba(37, 99, 235, 0.4)"
-            : "rgba(37, 99, 235, 0.15)";
-          strokeStyle = isHovered ? "#1d4ed8" : "#3b82f6";
+            ? "rgba(6, 182, 212, 0.5)"
+            : "rgba(6, 182, 212, 0.25)";
+          strokeStyle = isHovered ? "#0891b2" : "#06b6d4"; // Cyan 600 / 500
         }
 
         if (isHovered) {

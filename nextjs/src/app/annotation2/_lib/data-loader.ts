@@ -7,7 +7,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AnnotationRegion, CocoData, MetricStat, Point } from "../_types";
+import type { AnnotationRegion, CocoData, FilterConfig, MetricStat, Point } from "../_types";
 
 // 入力ファイルが配置されているディレクトリパス
 //TODO: GeXeLでは、動的にパスを読み込む
@@ -27,13 +27,15 @@ const INPUT_DIR = path.join(process.cwd(), "src/app/annotation2/input");
  * 4. 各メトリクス (例: 面積、円相当径など) の最小値と最大値を計算し、
  *    `MetricStat` オブジェクトの配列として返します。これはフィルタリングUIのスライダーの範囲設定などに利用されます。
  * 5. `remove.json` (存在する場合) を読み込み、削除済みのアノテーションIDのリストを返します。
+ * 6. `filtered.json` (存在する場合) を読み込み、保存されたフィルター設定を返します。
  *
- * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; removedIds: number[]; }>}
+ * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; removedIds: number[]; filterConfig: FilterConfig | null; }>}
  */
 export async function loadAnnotationData(): Promise<{
   regions: AnnotationRegion[];
   stats: MetricStat[];
   removedIds: number[];
+  filterConfig: FilterConfig | null;
 }> {
   // 1. segmentation.json (COCO Format) の読み込み
   // 画像内のアノテーション領域のポリゴンデータとバウンディングボックスを取得します。
@@ -85,7 +87,19 @@ export async function loadAnnotationData(): Promise<{
     // エラーログは出さない（正常系）
   }
 
-  // 4. データ結合 & メトリクス統計情報の計算
+  // 4. filtered.json の読み込み (フィルター設定)
+  let filterConfig: FilterConfig | null = null;
+  try {
+    const filterJsonPath = path.join(INPUT_DIR, "filtered.json");
+    const filterJsonContent = await fs.readFile(filterJsonPath, "utf-8");
+    filterConfig = JSON.parse(filterJsonContent);
+    console.log("[DataLoader] Loaded filtered.json:", filterConfig?.rules?.length, "rules");
+  } catch (error) {
+    // ファイルが存在しない場合は null として扱うが、それ以外のエラーはログに出す
+    console.error("[DataLoader] Failed to load filtered.json:", error);
+  }
+
+  // 5. データ結合 & メトリクス統計情報の計算
   // COCOデータとCSVデータを結合し、描画とフィルタリングに使用するAnnotationRegionの配列を生成します。
   // また、各メトリクスの最小値と最大値を追跡し、統計情報として返します。
   const regions: AnnotationRegion[] = [];
@@ -162,5 +176,6 @@ export async function loadAnnotationData(): Promise<{
     regions,
     stats,
     removedIds,
+    filterConfig,
   };
 }

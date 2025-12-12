@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { css } from "../../../../styled-system/css";
-import type { AnnotationRegion, MetricStat } from "../_types";
-import { saveRemovedAnnotations } from "../actions";
+import type { AnnotationRegion, FilterConfig, FilterRule, MetricStat } from "../_types";
+import { saveFilterConfig, saveRemovedAnnotations } from "../actions";
 import { CanvasLayer } from "./CanvasLayer";
 import { ControlPanel } from "./ControlPanel";
 
@@ -12,6 +12,7 @@ interface AnnotationPageClientProps {
   stats: MetricStat[];
   imageUrl: string;
   initialRemovedIds?: number[]; // 初期ロード時の削除済みID
+  initialFilterConfig?: FilterConfig | null; // 初期ロード時のフィルタ設定
 }
 
 export function AnnotationPageClient({
@@ -19,6 +20,7 @@ export function AnnotationPageClient({
   stats,
   imageUrl,
   initialRemovedIds = [],
+  initialFilterConfig = null,
 }: AnnotationPageClientProps) {
   // ユーザーによって手動で削除された領域のIDを管理
   const [removedIds, setRemovedIds] = useState<Set<number>>(
@@ -34,32 +36,56 @@ export function AnnotationPageClient({
     text: string;
   } | null>(null);
 
-  // フィルタ状態: 各メトリクスキーに対する [min, max] の範囲を管理
-  const [filters, setFilters] = useState<Record<string, [number, number]>>({});
+  // フィルタ状態: フィルタールールのスタック
+  const [rules, setRules] = useState<FilterRule[]>(
+    initialFilterConfig?.rules || [],
+  );
 
-  // フィルタリングロジック: filtersの状態に基づいて、非表示にする領域のIDを計算
+  // 初期設定の同期 (確実に反映させるため)
+  // サーバーコンポーネントから渡された初期設定があれば、それを適用する
+  useEffect(() => {
+    if (initialFilterConfig?.rules) {
+      console.log("[AnnotationPageClient] Applying initial filter config:", initialFilterConfig.rules);
+      setRules(initialFilterConfig.rules);
+    }
+  }, [initialFilterConfig]);
+
+  // フィルタリングロジック
   const filteredIds = useMemo(() => {
     const ids = new Set<number>();
+    const activeRules = rules.filter((r) => r.enabled);
 
-    // フィルタが一つも設定されていなければ、何もフィルタリングしない (空のSetを返す)
-    if (Object.keys(filters).length === 0) return ids;
+    // 有効なルールがなければ、フィルタリングなし
+    if (activeRules.length === 0) return ids;
 
     for (const region of initialRegions) {
-      let isFiltered = false; // この領域がフィルタリングされるべきか
-      for (const [key, [min, max]] of Object.entries(filters)) {
-        const val = region.metrics[key];
-        // 値が存在しない、または範囲外なら、この領域はフィルタリング対象
-        if (val === undefined || val < min || val > max) {
-          isFiltered = true;
-          break; // いずれかのフィルタ条件に合致すれば、その領域はフィルタされる
+      let isFiltered = false;
+
+      for (const rule of activeRules) {
+        const val = region.metrics[rule.metric];
+        if (val === undefined) continue;
+
+        if (rule.mode === "include") {
+          // "include" (範囲内を残す) -> 範囲外なら除外
+          if (val < rule.min || val > rule.max) {
+            isFiltered = true;
+            break;
+          }
+        } else {
+          // "exclude" (範囲内を除外) -> 範囲内なら除外
+          if (val >= rule.min && val <= rule.max) {
+            isFiltered = true;
+            break;
+          }
         }
       }
+
       if (isFiltered) {
-        ids.add(region.id); // フィルタ対象のIDをSetに追加
+        ids.add(region.id);
       }
     }
     return ids;
-  }, [initialRegions, filters]); // initialRegionsまたはfiltersが変更されたら再計算
+  }, [initialRegions, rules]);
 
   // クリックされた領域のIDをremovedIdsに追加または削除するハンドラ
   const handleRegionClick = (id: number) => {
@@ -78,8 +104,6 @@ export function AnnotationPageClient({
   const handleRangeSelect = (ids: number[]) => {
     setRemovedIds((prev) => {
       const next = new Set(prev);
-      // トグル動作にするか、一括削除にするか。
-      // 範囲選択は「選択」なので、ここでは「範囲内のIDを全て反転（トグル）」させる。
       ids.forEach((id) => {
         if (next.has(id)) {
           next.delete(id);
@@ -91,36 +115,63 @@ export function AnnotationPageClient({
     });
   };
 
-  // ControlPanelからのフィルタ変更イベントハンドラ
-  const handleFilterChange = (key: string, min: number, max: number) => {
-    setFilters((prev) => {
-      // フィルタがデフォルト値に戻された場合、フィルタリストから削除してパフォーマンスを最適化
-      const stat = stats.find((s) => s.key === key);
-      if (stat && min === stat.min && max === stat.max) {
-        const newState = { ...prev };
-        delete newState[key];
-        return newState;
-      }
-      return {
-        ...prev,
-        [key]: [min, max],
-      };
-    });
+  // ルール追加ハンドラ
+  const handleAddRule = (metricKey: string) => {
+    const stat = stats.find((s) => s.key === metricKey);
+    if (!stat) return;
+
+    const newRule: FilterRule = {
+      id: `rule-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      metric: metricKey,
+      mode: "include", // デフォルトは「範囲内を表示」
+      min: stat.min,
+      max: stat.max,
+      enabled: true,
+    };
+    // 新しいルールをスタックの一番上に追加
+    setRules((prev) => [newRule, ...prev]);
+  };
+
+  // ルール更新ハンドラ
+  const handleUpdateRule = (updatedRule: FilterRule) => {
+    setRules((prev) =>
+      prev.map((r) => (r.id === updatedRule.id ? updatedRule : r)),
+    );
+  };
+
+  // ルール削除ハンドラ
+  const handleRemoveRule = (id: string) => {
+    setRules((prev) => prev.filter((r) => r.id !== id));
   };
 
   // 保存ボタンのハンドラ
   const handleSave = () => {
     setSaveMessage(null);
     startTransition(async () => {
-      const result = await saveRemovedAnnotations(Array.from(removedIds));
-      setSaveMessage({
-        type: result.success ? "success" : "error",
-        text: result.message,
+      // 1. 手動削除IDの保存 (remove.json)
+      const removeResult = await saveRemovedAnnotations(Array.from(removedIds));
+
+      // 2. フィルタ設定と除外IDの保存 (filtered.json)
+      const filterResult = await saveFilterConfig({
+        version: 1,
+        rules,
+        excludedIds: Array.from(filteredIds),
       });
 
-      // 成功メッセージは数秒後に消す
-      if (result.success) {
+      if (removeResult.success && filterResult.success) {
+        setSaveMessage({
+          type: "success",
+          text: "保存しました (remove.json & filtered.json)",
+        });
         setTimeout(() => setSaveMessage(null), 3000);
+      } else {
+        const errorMsgs = [];
+        if (!removeResult.success) errorMsgs.push(removeResult.message);
+        if (!filterResult.success) errorMsgs.push(filterResult.message);
+        setSaveMessage({
+          type: "error",
+          text: `保存失敗: ${errorMsgs.join(", ")}`,
+        });
       }
     });
   };
@@ -140,7 +191,6 @@ export function AnnotationPageClient({
         <h1 className={css({ fontSize: "2xl", fontWeight: "bold" })}>
           Annotation Tool V2
         </h1>
-        {/* Header Save Button (Optional placement) */}
       </div>
 
       <div
@@ -162,15 +212,15 @@ export function AnnotationPageClient({
         >
           <CanvasLayer
             imageSrc={imageUrl}
-            width={1200} // TODO: 画像の実際のサイズを動的に取得する
-            height={900} // TODO: 同上
+            width={1200}
+            height={900}
             regions={initialRegions}
-            filteredIds={filteredIds} // 計算されたフィルタリングIDを渡す
-            removedIds={removedIds} // 削除済みIDを渡す
-            hoveredId={hoveredId} // ホバーIDを渡す
-            onHover={setHoveredId} // ホバーイベントハンドラを渡す
-            onClick={handleRegionClick} // クリックイベントハンドラを渡す
-            onRangeSelect={handleRangeSelect} // 範囲選択ハンドラを渡す
+            filteredIds={filteredIds}
+            removedIds={removedIds}
+            hoveredId={hoveredId}
+            onHover={setHoveredId}
+            onClick={handleRegionClick}
+            onRangeSelect={handleRangeSelect}
           />
           <div
             className={css({
@@ -220,7 +270,7 @@ export function AnnotationPageClient({
                 },
               })}
             >
-              {isSaving ? "保存中..." : "変更を保存 (remove.json)"}
+              {isSaving ? "保存中..." : "変更を保存 (remove.json & filtered.json)"}
             </button>
             {saveMessage && (
               <div
@@ -240,8 +290,10 @@ export function AnnotationPageClient({
 
           <ControlPanel
             stats={stats}
-            filters={filters}
-            onFilterChange={handleFilterChange}
+            rules={rules}
+            onAddRule={handleAddRule}
+            onUpdateRule={handleUpdateRule}
+            onRemoveRule={handleRemoveRule}
           />
         </div>
       </div>

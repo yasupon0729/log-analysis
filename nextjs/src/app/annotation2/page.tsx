@@ -6,7 +6,9 @@ const ORIGIN_IMAGE_URL = "/annotation2/image";
 // Next.jsのServer Componentsとして動作します。
 export default async function AnnotationPageV2() {
   // 1. データローダーを呼び出し、アノテーション領域とメトリクス統計データを取得
-  const { regions, stats, removedIds } = await loadAnnotationData();
+  // filterConfigも取得して初期状態としてクライアントに渡す
+  const { regions, stats, removedIds, filterConfig } =
+    await loadAnnotationData();
 
   // 2. クライアントコンポーネントにデータを渡してレンダリング
   return (
@@ -15,6 +17,7 @@ export default async function AnnotationPageV2() {
       stats={stats}
       imageUrl={ORIGIN_IMAGE_URL}
       initialRemovedIds={removedIds}
+      initialFilterConfig={filterConfig}
     />
   );
 }
