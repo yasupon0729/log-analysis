@@ -1,17 +1,5 @@
 "use client";
 
-// src/app/annotation2/_components/AnnotationPageClient.tsx
-//
-// このファイルは、annotation2アプリケーションのクライアントサイドのエントリーポイントです。
-// page.tsx (Server Component) から初期データを受け取り、
-// アノテーションの描画、インタラクション、フィルタリングなどのロジックを管理します。
-//
-// 関連ファイル:
-// - src/app/annotation2/page.tsx: このコンポーネントにデータを渡します。
-// - src/app/annotation2/_components/CanvasLayer.tsx: 実際にアノテーションを描画します。
-// - src/app/annotation2/_components/ControlPanel.tsx: フィルタリングUIを提供します。
-// - src/app/annotation2/_types/index.ts: Propsとして受け取るデータの型定義を提供します。
-
 import { useState, useMemo, useTransition } from "react";
 import { css } from "../../../../styled-system/css";
 import type { AnnotationRegion, MetricStat } from "../_types";
@@ -77,6 +65,23 @@ export function AnnotationPageClient({
       } else {
         next.add(id); // 未削除なら削除リストに追加
       }
+      return next;
+    });
+  };
+
+  // 範囲選択で指定されたIDリストを一括削除（または復元）するハンドラ
+  const handleRangeSelect = (ids: number[]) => {
+    setRemovedIds((prev) => {
+      const next = new Set(prev);
+      // トグル動作にするか、一括削除にするか。
+      // 範囲選択は「選択」なので、ここでは「範囲内のIDを全て反転（トグル）」させる。
+      ids.forEach(id => {
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      });
       return next;
     });
   };
@@ -148,10 +153,11 @@ export function AnnotationPageClient({
             hoveredId={hoveredId} // ホバーIDを渡す
             onHover={setHoveredId} // ホバーイベントハンドラを渡す
             onClick={handleRegionClick} // クリックイベントハンドラを渡す
+            onRangeSelect={handleRangeSelect} // 範囲選択ハンドラを渡す
           />
           <div className={css({ marginTop: "4", fontSize: "sm", color: "gray.600" })}>
             Total Regions: {initialRegions.length} | 
-            Filtered: {filteredIds.size} | 
+            Filtered: {filteredIds.size} |
             Removed: {removedIds.size}
           </div>
         </div>
