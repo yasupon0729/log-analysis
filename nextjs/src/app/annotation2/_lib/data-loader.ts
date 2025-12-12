@@ -28,13 +28,14 @@ const INPUT_DIR = path.join(process.cwd(), "src/app/annotation2/input");
  * 5. `remove.json` (存在する場合) を読み込み、削除済みのアノテーションIDのリストを返します。
  * 6. `filtered.json` (存在する場合) を読み込み、保存されたフィルター設定を返します。
  *
- * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; removedIds: number[]; filterConfig: FilterConfig | null; }>}
+ * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; removedIds: number[]; filterConfig: FilterConfig | null; addedRegions: AnnotationRegion[]; }>}
  */
 export async function loadAnnotationData(): Promise<{
   regions: AnnotationRegion[];
   stats: MetricStat[];
   removedIds: number[];
   filterConfig: FilterConfig | null;
+  addedRegions: AnnotationRegion[];
 }> {
   // 1. segmentation.json (COCO Format) の読み込み
   const jsonPath = path.join(INPUT_DIR, "segmentation.json");
@@ -88,7 +89,36 @@ export async function loadAnnotationData(): Promise<{
     console.error("[DataLoader] Failed to load filtered.json:", error);
   }
 
-  // 5. データ結合 & メトリクス統計情報の計算
+  // 5. additions.json の読み込み (手動追加領域)
+  let addedRegions: AnnotationRegion[] = [];
+  try {
+    const additionsPath = path.join(INPUT_DIR, "additions.json");
+    const additionsContent = await fs.readFile(additionsPath, "utf-8");
+    const additionsData = JSON.parse(additionsContent);
+    if (Array.isArray(additionsData.regions)) {
+      // 保存フォーマットから内部フォーマットへの変換
+      addedRegions = additionsData.regions.map((item: any) => {
+        const points: Point[] = [];
+        if (Array.isArray(item.segmentation) && item.segmentation.length > 0) {
+          const flatSeg = item.segmentation[0];
+          for (let i = 0; i < flatSeg.length; i += 2) {
+            points.push({ x: flatSeg[i], y: flatSeg[i + 1] });
+          }
+        }
+        return {
+          id: item.id,
+          bbox: item.bbox,
+          points: points,
+          metrics: item.metrics || {},
+          isManualAdded: true,
+        };
+      });
+    }
+  } catch (error) {
+    // ignore (ファイルがない場合は空リスト)
+  }
+
+  // 6. データ結合 & メトリクス統計情報の計算
   const regions: AnnotationRegion[] = [];
   const statMap = new Map<string, { min: number; max: number }>();
 
@@ -148,5 +178,6 @@ export async function loadAnnotationData(): Promise<{
     stats,
     removedIds,
     filterConfig,
+    addedRegions,
   };
 }

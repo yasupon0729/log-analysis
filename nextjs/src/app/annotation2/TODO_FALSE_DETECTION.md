@@ -84,53 +84,99 @@
     *   [x] フィルタリングUIでメトリクスを操作し、Canvas上のアノテーションが正しくフィルタリングされることを確認する。
 
 16. **UI調整とクリーンアップ**
-    *   [ ] 全体のレイアウト調整（Panda CSS使用）。
-    *   [ ] `CanvasLayer` の `width`/`height` をハードコードから動的に取得するように修正（COCOデータまたは親要素のサイズから）。
-    *   [ ] コードの整理（不要なログの削除、コメントの追加、型アサーションの最適化）。
-    *   [ ] 既存の `src/app/annotation` ページのコードを参考に、`token.ts` のようなグローバル定数ファイルの必要性を検討。
+    *   [x] 全体のレイアウト調整（Panda CSS使用）。
+    *   [x] `CanvasLayer` の `width`/`height` をハードコードから動的に取得するように修正（COCOデータまたは親要素のサイズから）。
+    *   [x] コードの整理（不要なログの削除、コメントの追加、型アサーションの最適化）。
+    *   [x] 既存の `src/app/annotation` ページのコードを参考に、`token.ts` のようなグローバル定数ファイルの必要性を検討。
 
 ## フェーズ 6: 範囲選択による一括除去機能（クリック/ドラッグ両立）
 
 17. **インタラクションの統合 (`CanvasLayer.tsx`)**
-    *   [ ] `selectionMode` プロパティを削除（外部からの制御を廃止）。
-    *   [ ] `onMouseDown` で開始座標を記録。
-    *   [ ] `onMouseMove` で、開始座標から一定距離（例: 5px）以上移動した場合のみ `isDragging` を有効化し、矩形を描画するロジックに変更。
-    *   [ ] `onMouseUp` で条件分岐:
+    *   [x] `selectionMode` プロパティを削除（外部からの制御を廃止）。
+    *   [x] `onMouseDown` で開始座標を記録。
+    *   [x] `onMouseMove` で、開始座標から一定距離（例: 5px）以上移動した場合のみ `isDragging` を有効化し、矩形を描画するロジックに変更。
+    *   [x] `onMouseUp` で条件分岐:
         *   `isDragging` が `true` の場合: 範囲選択ロジック（矩形内のアノテーション特定と一括操作）を実行。
         *   `isDragging` が `false` の場合: クリックロジック（単一アノテーションのトグル）を実行。
 
 18. **クライアントコンポーネントのクリーンアップ (`AnnotationPageClient.tsx`)**
-    *   [ ] `selectionMode` ステートとモード切り替えボタンを削除。
-    *   [ ] シンプルになった `CanvasLayer` インターフェースに合わせて Props を修正。
+    *   [x] `selectionMode` ステートとモード切り替えボタンを削除。
+    *   [x] シンプルになった `CanvasLayer` インターフェースに合わせて Props を修正。
 
 19. **検証**
-    *   [ ] クリックで単一アノテーションが削除/復元できることを確認。
-    *   [ ] ドラッグで矩形が表示され、範囲内のアノテーションが一括で削除/復元されることを確認。
-    *   [ ] わずかなマウスの動き（手ブレ）では範囲選択にならず、クリックとして機能することを確認。
+    *   [x] クリックで単一アノテーションが削除/復元できることを確認。
+    *   [x] ドラッグで矩形が表示され、範囲内のアノテーションが一括で削除/復元されることを確認。
+    *   [x] わずかなマウスの動き（手ブレ）では範囲選択にならず、クリックとして機能することを確認。
 
 ## フェーズ 7: 画像のズーム機能（マウスホイール操作）
 
 20. **ズーム/パン状態管理の実装 (`CanvasLayer.tsx`)**
-    *   [ ] `transform` state (`{ scale: number, x: number, y: number }`) を追加。
-    *   [ ] `onWheel` イベントハンドラを実装し、マウス位置を中心としたズーム計算を行う。
+    *   [x] `transform` state (`{ scale: number, x: number, y: number }`) を追加。
+    *   [x] `onWheel` イベントハンドラを実装し、マウス位置を中心としたズーム計算を行う。
 
 21. **描画ロジックの更新 (`CanvasLayer.tsx`)**
-    *   [ ] `draw` 関数内で `ctx.setTransform` を使用し、ズームと移動を適用してから画像とアノテーションを描画する。
+    *   [x] `draw` 関数内で `ctx.setTransform` を使用し、ズームと移動を適用してから画像とアノテーションを描画する。
 
 22. **座標変換ロジックの更新 (`CanvasLayer.tsx`)**
-    *   [ ] `getCanvasCoordinates` 関数を修正し、画面上のマウス座標から、ズーム/移動を考慮した元の画像座標系への逆変換を実装する。
-    *   [ ] これにより、ズーム状態でもホバー判定やクリック判定、範囲選択が正しく動作することを確認する。
+    *   [x] `getRawCoordinates` と `toWorldCoordinates` 関数を実装し、画面上のマウス座標から、ズーム/移動を考慮した元の画像座標系への逆変換を実装する。
+    *   [x] これにより、ズーム状態でもホバー判定やクリック判定、範囲選択が正しく動作することを確認する。
 
 23. **検証**
-    *   [ ] マウスホイールでスムーズに拡大縮小できることを確認。
-    *   [ ] 拡大状態でクリックや範囲選択を行い、正しい位置（アノテーション）が反応することを確認。
+    *   [x] マウスホイールでスムーズに拡大縮小できることを確認。
+    *   [x] 拡大状態でクリックや範囲選択を行い、正しい位置（アノテーション）が反応することを確認。
 
 ## フェーズ 8: パフォーマンス最適化
 
 24. **画像配信APIの実装**
-    *   [ ] `src/app/api/annotation2/image/route.ts` を作成し、画像をストリーム配信する。
+    *   [x] `src/app/annotation2/image/route.ts` を作成し、画像をストリーム配信する。
 
 25. **クライアント側の読み込み変更**
-    *   [ ] `src/app/annotation2/page.tsx` でのBase64変換を削除。
+    *   [x] `src/app/annotation2/page.tsx` でのBase64変換を削除。
     *   [x] `src/app/annotation2/_components/AnnotationPageClient.tsx` のPropsを `imageBase64` から `imageUrl` に変更。
 
+## フェーズ 9: フィルタリング機能の拡張 (再帰的・論理演算)
+
+26. **データ構造とロジックの刷新 (v3)**
+    *   [x] `FilterGroup` (Keep/Remove Action, AND/OR Logic) と `FilterCondition` (Range) の再帰的定義。
+    *   [x] `evaluateFilter` ロジックの実装（再帰評価とKeep/Removeの適用）。
+    *   [x] `getFilterExpression` ロジックの実装（現在のフィルタ設定の論理式可視化）。
+
+27. **UIの再構築 (`ControlPanel.tsx`)**
+    *   [x] 再帰的なツリー構造を表示・編集できるUIへの刷新。
+    *   [x] グループの追加・削除、条件の追加・削除機能の実装。
+    *   [x] ダークテーマへの対応（視認性向上）。
+    *   [x] ダブルレンジスライダーによる範囲指定の実装。
+
+28. **設定の永続化と読み込み**
+    *   [x] `filtered.json` への設定保存 (v3形式)。
+    *   [x] `data-loader.ts` での `filtered.json` 読み込みと初期状態への反映。
+    *   [x] キャッシュパージ (`revalidatePath`) による即時反映。
+
+## フェーズ 10: 追記機能（アノテーションの手動追加）
+
+29. **描画モードの実装とUI追加**
+    *   [x] `AnnotationPageClient`: `editMode` ステート ("select" | "draw") の追加。
+    *   [x] `AnnotationPageClient`: UIに「描画モード」切り替えボタン（ペンアイコン等）を追加。
+    *   [x] `CanvasLayer`: `editMode="draw"` 時にカーソルスタイルを変更（十字カーソル等）。
+
+30. **ポリゴン描画ロジックの実装 (`CanvasLayer.tsx`)**
+    *   [x] `drawingPoints` ステート（描画中の点リスト）の追加。
+    *   [x] `onMouseDown`: 描画モード時、クリックで頂点を `drawingPoints` に追加。
+    *   [x] `onMouseMove`: 描画モード時、最後の点とマウスカーソルを結ぶラバーバンド（ガイド線）を描画。
+    *   [x] 完了アクション（右クリック）でポリゴンを閉じる判定。
+    *   [x] 描画完了時、一時的な `AnnotationRegion` オブジェクトを生成し、親コンポーネントへ通知 (`onAddRegion`)。
+
+31. **データ管理とメトリクス簡易計算**
+    *   [x] `AnnotationPageClient`: `addedRegions` ステートの追加。
+    *   [x] `_utils/geometry.ts`: ポリゴン座標からBBoxを計算する関数を作成。
+    *   [x] `onAddRegion`: ユニークIDを発番し、`addedRegions` に追加。`isManualAdded` フラグを設定。
+
+32. **永続化機能の更新**
+    *   [x] `actions.ts`: `saveAddedAnnotations` アクションを追加。
+    *   [x] `data-loader.ts`: `loadAddedAnnotations` 相当の処理を追加し、初期ロード時に反映。
+    *   [x] `page.tsx`: 読み込んだ追加領域をクライアントに渡す。
+
+33. **検証**
+    *   [x] 描画モードでポリゴンを作成し、正しく追加されるか確認。
+    *   [x] 追加した領域がフィルタリングで消えないことを確認。
+    *   [x] 保存後、リロードしても追加した領域が保持されているか確認。

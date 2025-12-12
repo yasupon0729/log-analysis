@@ -12,6 +12,7 @@ export interface AnnotationRegion {
   bbox: [number, number, number, number];
   points: Point[];
   metrics: Record<string, number>;
+  isManualAdded?: boolean; // 手動追加された領域かどうか
 }
 
 // 各メトリクスの統計情報

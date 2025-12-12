@@ -6,6 +6,9 @@ export function evaluateFilter(
   node: FilterNode,
   region: AnnotationRegion,
 ): boolean {
+  // 手動追加された領域は常にフィルタを通過させる（表示する）
+  if (region.isManualAdded) return true;
+
   if (!node.enabled) return true; // 無効なノードは判定に影響させない（Pass扱い）
 
   // Condition: 常に「範囲内かどうか」を判定
