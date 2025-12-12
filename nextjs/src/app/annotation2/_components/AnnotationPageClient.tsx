@@ -1,33 +1,38 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { css } from "../../../../styled-system/css";
 import type { AnnotationRegion, MetricStat } from "../_types";
+import { saveRemovedAnnotations } from "../actions";
 import { CanvasLayer } from "./CanvasLayer";
 import { ControlPanel } from "./ControlPanel";
-import { saveRemovedAnnotations } from "../actions";
 
 interface AnnotationPageClientProps {
   initialRegions: AnnotationRegion[];
   stats: MetricStat[];
-  imageBase64: string;
+  imageUrl: string;
   initialRemovedIds?: number[]; // 初期ロード時の削除済みID
 }
 
 export function AnnotationPageClient({
   initialRegions,
   stats,
-  imageBase64,
+  imageUrl,
   initialRemovedIds = [],
 }: AnnotationPageClientProps) {
   // ユーザーによって手動で削除された領域のIDを管理
-  const [removedIds, setRemovedIds] = useState<Set<number>>(new Set(initialRemovedIds));
+  const [removedIds, setRemovedIds] = useState<Set<number>>(
+    new Set(initialRemovedIds),
+  );
   // 現在マウスがホバーしている領域のIDを管理
   const [hoveredId, setHoveredId] = useState<number | null>(null);
-  
+
   // 保存処理の状態管理
   const [isSaving, startTransition] = useTransition();
-  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   // フィルタ状態: 各メトリクスキーに対する [min, max] の範囲を管理
   const [filters, setFilters] = useState<Record<string, [number, number]>>({});
@@ -35,7 +40,7 @@ export function AnnotationPageClient({
   // フィルタリングロジック: filtersの状態に基づいて、非表示にする領域のIDを計算
   const filteredIds = useMemo(() => {
     const ids = new Set<number>();
-    
+
     // フィルタが一つも設定されていなければ、何もフィルタリングしない (空のSetを返す)
     if (Object.keys(filters).length === 0) return ids;
 
@@ -75,7 +80,7 @@ export function AnnotationPageClient({
       const next = new Set(prev);
       // トグル動作にするか、一括削除にするか。
       // 範囲選択は「選択」なので、ここでは「範囲内のIDを全て反転（トグル）」させる。
-      ids.forEach(id => {
+      ids.forEach((id) => {
         if (next.has(id)) {
           next.delete(id);
         } else {
@@ -112,7 +117,7 @@ export function AnnotationPageClient({
         type: result.success ? "success" : "error",
         text: result.message,
       });
-      
+
       // 成功メッセージは数秒後に消す
       if (result.success) {
         setTimeout(() => setSaveMessage(null), 3000);
@@ -121,30 +126,42 @@ export function AnnotationPageClient({
   };
 
   return (
-    <div className={css({ padding: "8", maxWidth: "1600px", margin: "0 auto" })}>
-      <div className={css({ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6" })}>
+    <div
+      className={css({ padding: "8", maxWidth: "1600px", margin: "0 auto" })}
+    >
+      <div
+        className={css({
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "6",
+        })}
+      >
         <h1 className={css({ fontSize: "2xl", fontWeight: "bold" })}>
           Annotation Tool V2
         </h1>
         {/* Header Save Button (Optional placement) */}
       </div>
-      
-      <div className={css({ 
-        display: "grid", 
-        gridTemplateColumns: "1fr 350px", // 左: Canvas, 右: ControlPanel
-        gap: "8",
-        alignItems: "start" 
-      })}>
-        
+
+      <div
+        className={css({
+          display: "grid",
+          gridTemplateColumns: "1fr 350px", // 左: Canvas, 右: ControlPanel
+          gap: "8",
+          alignItems: "start",
+        })}
+      >
         {/* Main Canvas Area */}
-        <div className={css({ 
-          backgroundColor: "gray.50", 
-          padding: "4", 
-          borderRadius: "xl",
-          border: "1px solid token(colors.gray.200)"
-        })}>
+        <div
+          className={css({
+            backgroundColor: "gray.50",
+            padding: "4",
+            borderRadius: "xl",
+            border: "1px solid token(colors.gray.200)",
+          })}
+        >
           <CanvasLayer
-            imageSrc={`data:image/png;base64,${imageBase64}`}
+            imageSrc={imageUrl}
             width={1200} // TODO: 画像の実際のサイズを動的に取得する
             height={900} // TODO: 同上
             regions={initialRegions}
@@ -155,27 +172,36 @@ export function AnnotationPageClient({
             onClick={handleRegionClick} // クリックイベントハンドラを渡す
             onRangeSelect={handleRangeSelect} // 範囲選択ハンドラを渡す
           />
-          <div className={css({ marginTop: "4", fontSize: "sm", color: "gray.600" })}>
-            Total Regions: {initialRegions.length} | 
-            Filtered: {filteredIds.size} |
-            Removed: {removedIds.size}
+          <div
+            className={css({
+              marginTop: "4",
+              fontSize: "sm",
+              color: "gray.600",
+            })}
+          >
+            Total Regions: {initialRegions.length} | Filtered:{" "}
+            {filteredIds.size} | Removed: {removedIds.size}
           </div>
         </div>
 
         {/* Sidebar Controls */}
-        <div className={css({ 
-          display: "flex", 
-          flexDirection: "column", 
-          gap: "6" 
-        })}>
+        <div
+          className={css({
+            display: "flex",
+            flexDirection: "column",
+            gap: "6",
+          })}
+        >
           {/* 保存エリア */}
-          <div className={css({
-            padding: "4",
-            backgroundColor: "white",
-            borderRadius: "xl",
-            border: "1px solid token(colors.gray.200)",
-            boxShadow: "sm",
-          })}>
+          <div
+            className={css({
+              padding: "4",
+              backgroundColor: "white",
+              borderRadius: "xl",
+              border: "1px solid token(colors.gray.200)",
+              boxShadow: "sm",
+            })}
+          >
             <button
               type="button"
               onClick={handleSave}
@@ -191,31 +217,33 @@ export function AnnotationPageClient({
                 transition: "background-color 0.2s",
                 "&:hover": {
                   backgroundColor: isSaving ? "gray.400" : "blue.700",
-                }
+                },
               })}
             >
               {isSaving ? "保存中..." : "変更を保存 (remove.json)"}
             </button>
             {saveMessage && (
-              <div className={css({
-                marginTop: "3",
-                fontSize: "sm",
-                color: saveMessage.type === "success" ? "green.600" : "red.600",
-                fontWeight: "medium",
-                textAlign: "center"
-              })}>
+              <div
+                className={css({
+                  marginTop: "3",
+                  fontSize: "sm",
+                  color:
+                    saveMessage.type === "success" ? "green.600" : "red.600",
+                  fontWeight: "medium",
+                  textAlign: "center",
+                })}
+              >
                 {saveMessage.text}
               </div>
             )}
           </div>
 
-          <ControlPanel 
-            stats={stats} 
+          <ControlPanel
+            stats={stats}
             filters={filters}
             onFilterChange={handleFilterChange}
           />
         </div>
-
       </div>
     </div>
   );

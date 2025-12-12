@@ -7,7 +7,7 @@ import { css } from "../../../../styled-system/css";
 import type { AnnotationRegion } from "../_types";
 
 interface CanvasLayerProps {
-  imageSrc: string; // Base64形式の画像データ
+  imageSrc: string; // 表示する画像のURL（Data URLでも可）
   width: number; // Canvasの論理幅
   height: number; // Canvasの論理高さ
   regions: AnnotationRegion[]; // 描画するアノテーション領域
@@ -40,12 +40,16 @@ export function CanvasLayer({
 
   // ドラッグ状態管理
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null); // World座標
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(
+    null,
+  ); // World座標
   const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null); // World座標
-  
+
   // パンニング（視点移動）用のドラッグ状態
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(null); // Raw座標
+  const [panStart, setPanStart] = useState<{ x: number; y: number } | null>(
+    null,
+  ); // Raw座標
 
   const DRAG_THRESHOLD = 5;
 
@@ -63,7 +67,14 @@ export function CanvasLayer({
       ctx.clearRect(0, 0, width, height);
 
       // 2. ズーム・パンの適用
-      ctx.setTransform(transform.scale, 0, 0, transform.scale, transform.x, transform.y);
+      ctx.setTransform(
+        transform.scale,
+        0,
+        0,
+        transform.scale,
+        transform.x,
+        transform.y,
+      );
 
       // 3. 画像描画
       if (image) {
@@ -76,7 +87,7 @@ export function CanvasLayer({
       // 4. アノテーション描画
       regions.forEach((region) => {
         // 削除済み領域の描画制御
-        // if (removedIds.has(region.id)) return; 
+        // if (removedIds.has(region.id)) return;
 
         const isRemoved = removedIds.has(region.id);
         const isFiltered = filteredIds.has(region.id);
@@ -87,20 +98,24 @@ export function CanvasLayer({
         let lineWidth = 1 / transform.scale; // ズームしても線の太さを一定に見せるため
 
         if (isRemoved) {
-          fillStyle = isHovered ? "rgba(220, 38, 38, 0.45)" : "rgba(248, 113, 113, 0.35)";
+          fillStyle = isHovered
+            ? "rgba(220, 38, 38, 0.45)"
+            : "rgba(248, 113, 113, 0.35)";
           strokeStyle = "#dc2626";
         } else if (isFiltered) {
           fillStyle = "rgba(200, 200, 200, 0.1)";
           strokeStyle = "rgba(200, 200, 200, 0.2)";
         } else {
-          fillStyle = isHovered ? "rgba(37, 99, 235, 0.4)" : "rgba(37, 99, 235, 0.15)";
+          fillStyle = isHovered
+            ? "rgba(37, 99, 235, 0.4)"
+            : "rgba(37, 99, 235, 0.15)";
           strokeStyle = isHovered ? "#1d4ed8" : "#3b82f6";
         }
 
         if (isHovered) {
           lineWidth = 2 / transform.scale;
         }
-        
+
         ctx.fillStyle = fillStyle;
         ctx.strokeStyle = strokeStyle;
         ctx.lineWidth = lineWidth;
@@ -113,7 +128,7 @@ export function CanvasLayer({
           }
           ctx.closePath();
         }
-        
+
         ctx.fill();
         ctx.stroke();
       });
@@ -129,10 +144,10 @@ export function CanvasLayer({
         ctx.lineWidth = 2 / transform.scale;
         ctx.setLineDash([6 / transform.scale, 4 / transform.scale]); // 点線もスケール対応
         ctx.strokeRect(x, y, w, h);
-        
+
         ctx.fillStyle = "rgba(251, 146, 60, 0.2)";
         ctx.fillRect(x, y, w, h);
-        
+
         ctx.setLineDash([]);
       }
     };
@@ -147,13 +162,28 @@ export function CanvasLayer({
     } else {
       draw();
     }
-  }, [imageSrc, regions, filteredIds, removedIds, hoveredId, width, height, isDragging, dragStart, dragEnd, transform]);
-
+  }, [
+    imageSrc,
+    regions,
+    filteredIds,
+    removedIds,
+    hoveredId,
+    width,
+    height,
+    isDragging,
+    dragStart,
+    dragEnd,
+    transform,
+  ]);
 
   // --- 座標変換ヘルパー ---
 
   // イベント(Display)座標 -> CanvasRaw座標 (内部解像度)
-  const getRawCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>) => {
+  const getRawCoordinates = (
+    e:
+      | React.MouseEvent<HTMLCanvasElement>
+      | React.WheelEvent<HTMLCanvasElement>,
+  ) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
@@ -180,7 +210,6 @@ export function CanvasLayer({
   //     y: worldY * transform.scale + transform.y,
   //   };
   // };
-
 
   // --- イベントハンドラ ---
 
@@ -218,7 +247,7 @@ export function CanvasLayer({
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const raw = getRawCoordinates(e);
     const world = toWorldCoordinates(raw.x, raw.y);
-    
+
     // パンニング開始判定のためにRaw座標を保存
     setPanStart(raw);
 
@@ -264,19 +293,19 @@ export function CanvasLayer({
         // 要望は「ズーム」なので、移動手段としてパンニングも欲しい。
         // -> **右クリック** または **ホイールボタン** ドラッグでパンニングにしますか？
         // -> あるいは、アノテーションがない場所からのドラッグはパンニング？
-        
-        // 暫定仕様: 
+
+        // 暫定仕様:
         // 範囲選択を優先。パンニングは今のところ未実装とする（ズーム倍率を変えれば移動できるため）。
         // ただし、ズームしすぎると端に行けないので、やはりパンニングは必要。
         // 「Shiftキーを押しながらドラッグ」でパンニングにします。
         if (e.shiftKey) {
-            setIsPanning(true);
-            // 範囲選択のリセット
-            setDragStart(null);
-            setDragEnd(null);
+          setIsPanning(true);
+          // 範囲選択のリセット
+          setDragStart(null);
+          setDragEnd(null);
         } else {
-            setIsDragging(true);
-            setDragEnd(world);
+          setIsDragging(true);
+          setDragEnd(world);
         }
       }
       return;
@@ -309,7 +338,7 @@ export function CanvasLayer({
 
       if (inside) {
         foundId = region.id;
-        break; 
+        break;
       }
     }
 
@@ -318,9 +347,9 @@ export function CanvasLayer({
 
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isPanning) {
-        setIsPanning(false);
-        setPanStart(null);
-        return;
+      setIsPanning(false);
+      setPanStart(null);
+      return;
     }
 
     if (!dragStart) return;
@@ -334,17 +363,22 @@ export function CanvasLayer({
 
       const selectedIds: number[] = [];
 
-      regions.forEach(region => {
-          const [bx, by, bw, bh] = region.bbox;
-          const centerX = bx + bw / 2;
-          const centerY = by + bh / 2;
-          if (centerX >= minX && centerX <= maxX && centerY >= minY && centerY <= maxY) {
-              selectedIds.push(region.id);
-          }
+      regions.forEach((region) => {
+        const [bx, by, bw, bh] = region.bbox;
+        const centerX = bx + bw / 2;
+        const centerY = by + bh / 2;
+        if (
+          centerX >= minX &&
+          centerX <= maxX &&
+          centerY >= minY &&
+          centerY <= maxY
+        ) {
+          selectedIds.push(region.id);
+        }
       });
 
       if (selectedIds.length > 0) {
-          onRangeSelect(selectedIds);
+        onRangeSelect(selectedIds);
       }
     } else {
       // クリック処理 (移動なし)
@@ -371,7 +405,7 @@ export function CanvasLayer({
   });
 
   return (
-    <div className={css({ overflow: "hidden", position: "relative" })}> 
+    <div className={css({ overflow: "hidden", position: "relative" })}>
       {/* 親divでoverflow:hiddenしておかないと、パンニングで画像が枠外に出た時に見えるかも */}
       <canvas
         ref={canvasRef}
@@ -383,21 +417,24 @@ export function CanvasLayer({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
-            onHover(null);
-            if(dragStart) handleMouseUp({} as React.MouseEvent<HTMLCanvasElement>);
+          onHover(null);
+          if (dragStart)
+            handleMouseUp({} as React.MouseEvent<HTMLCanvasElement>);
         }}
       />
-      <div className={css({ 
-          position: "absolute", 
-          bottom: 2, 
-          right: 2, 
-          backgroundColor: "rgba(255,255,255,0.8)", 
-          padding: "2px 6px", 
-          fontSize: "xs", 
+      <div
+        className={css({
+          position: "absolute",
+          bottom: 2,
+          right: 2,
+          backgroundColor: "rgba(255,255,255,0.8)",
+          padding: "2px 6px",
+          fontSize: "xs",
           borderRadius: "md",
-          pointerEvents: "none"
-      })}>
-          Zoom: {Math.round(transform.scale * 100)}% (Shift+Drag to Pan)
+          pointerEvents: "none",
+        })}
+      >
+        Zoom: {Math.round(transform.scale * 100)}% (Shift+Drag to Pan)
       </div>
     </div>
   );

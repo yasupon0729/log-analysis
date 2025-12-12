@@ -20,12 +20,12 @@
 
 4.  **サーバーコンポーネントの実装 (`page.tsx`)**
     *   [x] `data-loader` を呼び出し、データを取得する。
-    *   [x] `input/origin.png` を読み込み、Base64文字列に変換してクライアントに渡す準備をする。
+    *   [x] `input/origin.png` をキャッシュ付きエンドポイント (`/annotation2/image`) 経由で配信し、クライアントにURLを渡す。
     *   [x] クライアントコンポーネント (`AnnotationPageClient`) へデータを渡す。
 
 5.  **描画コンポーネントの実装 (`_components/CanvasLayer.tsx`) - Part 1 (画像)**
     *   [x] HTML5 Canvas 要素の配置。
-    *   [x] Base64画像データを Canvas に描画する処理の実装。
+    *   [x] 画像URL（Data URL含む）を Canvas に描画する処理の実装。
     *   [x] ウィンドウリサイズ等への対応（今回は固定サイズか、親要素に合わせるか要検討）。
 
 6.  **描画コンポーネントの実装 (`_components/CanvasLayer.tsx`) - Part 2 (アノテーション)**
@@ -124,4 +124,13 @@
 23. **検証**
     *   [ ] マウスホイールでスムーズに拡大縮小できることを確認。
     *   [ ] 拡大状態でクリックや範囲選択を行い、正しい位置（アノテーション）が反応することを確認。
+
+## フェーズ 8: パフォーマンス最適化
+
+24. **画像配信APIの実装**
+    *   [ ] `src/app/api/annotation2/image/route.ts` を作成し、画像をストリーム配信する。
+
+25. **クライアント側の読み込み変更**
+    *   [ ] `src/app/annotation2/page.tsx` でのBase64変換を削除。
+    *   [x] `src/app/annotation2/_components/AnnotationPageClient.tsx` のPropsを `imageBase64` から `imageUrl` に変更。
 
