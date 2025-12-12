@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { css } from "../../../../styled-system/css";
-import type { AnnotationRegion, FilterConfig, FilterRule, MetricStat } from "../_types";
+import { createDefaultConfig, evaluateFilter } from "../_lib/filter-utils";
+import type {
+  AnnotationRegion,
+  FilterConfig,
+  FilterGroup,
+  MetricStat,
+} from "../_types";
 import { saveFilterConfig, saveRemovedAnnotations } from "../actions";
 import { CanvasLayer } from "./CanvasLayer";
 import { ControlPanel } from "./ControlPanel";
@@ -36,56 +42,39 @@ export function AnnotationPageClient({
     text: string;
   } | null>(null);
 
-  // フィルタ状態: フィルタールールのスタック
-  const [rules, setRules] = useState<FilterRule[]>(
-    initialFilterConfig?.rules || [],
-  );
+  // フィルタ設定の状態管理 (v2 -> v3)
+  const [filterConfig, setFilterConfig] = useState<FilterConfig>(() => {
+    if (initialFilterConfig && initialFilterConfig.version === 3) {
+      return initialFilterConfig;
+    }
+    return createDefaultConfig();
+  });
 
-  // 初期設定の同期 (確実に反映させるため)
-  // サーバーコンポーネントから渡された初期設定があれば、それを適用する
+  // 初期設定の同期
   useEffect(() => {
-    if (initialFilterConfig?.rules) {
-      console.log("[AnnotationPageClient] Applying initial filter config:", initialFilterConfig.rules);
-      setRules(initialFilterConfig.rules);
+    if (initialFilterConfig && initialFilterConfig.version === 3) {
+      console.log("[AnnotationPageClient] Applying initial filter config v3");
+      setFilterConfig(initialFilterConfig);
     }
   }, [initialFilterConfig]);
 
-  // フィルタリングロジック
+  // フィルタリングロジック (再帰評価)
   const filteredIds = useMemo(() => {
     const ids = new Set<number>();
-    const activeRules = rules.filter((r) => r.enabled);
 
-    // 有効なルールがなければ、フィルタリングなし
-    if (activeRules.length === 0) return ids;
+    // Rootが無効ならフィルタリングなし
+    if (!filterConfig.root.enabled) return ids;
 
     for (const region of initialRegions) {
-      let isFiltered = false;
-
-      for (const rule of activeRules) {
-        const val = region.metrics[rule.metric];
-        if (val === undefined) continue;
-
-        if (rule.mode === "include") {
-          // "include" (範囲内を残す) -> 範囲外なら除外
-          if (val < rule.min || val > rule.max) {
-            isFiltered = true;
-            break;
-          }
-        } else {
-          // "exclude" (範囲内を除外) -> 範囲内なら除外
-          if (val >= rule.min && val <= rule.max) {
-            isFiltered = true;
-            break;
-          }
-        }
-      }
-
-      if (isFiltered) {
+      // Rootグループから評価開始
+      // evaluateFilter: true = Pass (表示), false = Block (除外)
+      // したがって、false の場合に filteredIds に追加する
+      if (!evaluateFilter(filterConfig.root, region)) {
         ids.add(region.id);
       }
     }
     return ids;
-  }, [initialRegions, rules]);
+  }, [initialRegions, filterConfig]);
 
   // クリックされた領域のIDをremovedIdsに追加または削除するハンドラ
   const handleRegionClick = (id: number) => {
@@ -115,33 +104,9 @@ export function AnnotationPageClient({
     });
   };
 
-  // ルール追加ハンドラ
-  const handleAddRule = (metricKey: string) => {
-    const stat = stats.find((s) => s.key === metricKey);
-    if (!stat) return;
-
-    const newRule: FilterRule = {
-      id: `rule-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      metric: metricKey,
-      mode: "include", // デフォルトは「範囲内を表示」
-      min: stat.min,
-      max: stat.max,
-      enabled: true,
-    };
-    // 新しいルールをスタックの一番上に追加
-    setRules((prev) => [newRule, ...prev]);
-  };
-
-  // ルール更新ハンドラ
-  const handleUpdateRule = (updatedRule: FilterRule) => {
-    setRules((prev) =>
-      prev.map((r) => (r.id === updatedRule.id ? updatedRule : r)),
-    );
-  };
-
-  // ルール削除ハンドラ
-  const handleRemoveRule = (id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
+  // フィルタ設定更新ハンドラ
+  const handleUpdateRoot = (newRoot: FilterGroup) => {
+    setFilterConfig((prev) => ({ ...prev, root: newRoot }));
   };
 
   // 保存ボタンのハンドラ
@@ -152,11 +117,11 @@ export function AnnotationPageClient({
       const removeResult = await saveRemovedAnnotations(Array.from(removedIds));
 
       // 2. フィルタ設定と除外IDの保存 (filtered.json)
-      const filterResult = await saveFilterConfig({
-        version: 1,
-        rules,
+      const configToSave: FilterConfig = {
+        ...filterConfig,
         excludedIds: Array.from(filteredIds),
-      });
+      };
+      const filterResult = await saveFilterConfig(configToSave);
 
       if (removeResult.success && filterResult.success) {
         setSaveMessage({
@@ -189,14 +154,14 @@ export function AnnotationPageClient({
         })}
       >
         <h1 className={css({ fontSize: "2xl", fontWeight: "bold" })}>
-          Annotation Tool V2
+          Annotation Tool V2 (Recursive Filter)
         </h1>
       </div>
 
       <div
         className={css({
           display: "grid",
-          gridTemplateColumns: "1fr 350px", // 左: Canvas, 右: ControlPanel
+          gridTemplateColumns: "1fr 400px", // パネルを少し広くする
           gap: "8",
           alignItems: "start",
         })}
@@ -270,7 +235,9 @@ export function AnnotationPageClient({
                 },
               })}
             >
-              {isSaving ? "保存中..." : "変更を保存 (remove.json & filtered.json)"}
+              {isSaving
+                ? "保存中..."
+                : "変更を保存 (remove.json & filtered.json)"}
             </button>
             {saveMessage && (
               <div
@@ -290,10 +257,9 @@ export function AnnotationPageClient({
 
           <ControlPanel
             stats={stats}
-            rules={rules}
-            onAddRule={handleAddRule}
-            onUpdateRule={handleUpdateRule}
-            onRemoveRule={handleRemoveRule}
+            rootGroup={filterConfig.root}
+            maxDepth={filterConfig.maxDepth}
+            onUpdateRoot={handleUpdateRoot}
           />
         </div>
       </div>

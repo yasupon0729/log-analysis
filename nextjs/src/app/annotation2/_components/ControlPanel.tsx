@@ -1,28 +1,124 @@
 "use client";
 
 import { css } from "../../../../styled-system/css";
-import type { FilterRule, MetricStat } from "../_types";
+import { getFilterExpression } from "../_lib/filter-utils";
+import type {
+  FilterCondition,
+  FilterGroup,
+  FilterNode,
+  MetricStat,
+} from "../_types";
 
 interface ControlPanelProps {
-  stats: MetricStat[]; // 各メトリクスの統計情報 (min/max値を含む)
-  rules: FilterRule[]; // 現在適用されているフィルタールールのリスト (Stack)
-  onAddRule: (metric: string) => void; // ルール追加時のコールバック
-  onUpdateRule: (rule: FilterRule) => void; // ルール更新時のコールバック
-  onRemoveRule: (id: string) => void; // ルール削除時のコールバック
+  stats: MetricStat[];
+  rootGroup: FilterGroup;
+  maxDepth: number;
+  onUpdateRoot: (newRoot: FilterGroup) => void;
 }
 
 export function ControlPanel({
   stats,
-  rules,
-  onAddRule,
-  onUpdateRule,
-  onRemoveRule,
+  rootGroup,
+  maxDepth,
+  onUpdateRoot,
 }: ControlPanelProps) {
+  // --- Helpers ---
+  const updateNode = (
+    node: FilterNode,
+    targetId: string,
+    updater: (n: FilterNode) => FilterNode,
+  ): FilterNode => {
+    if (node.id === targetId) {
+      return updater(node);
+    }
+    if (node.type === "group") {
+      return {
+        ...node,
+        children: node.children.map((child) =>
+          updateNode(child, targetId, updater),
+        ) as (FilterGroup | FilterCondition)[],
+      };
+    }
+    return node;
+  };
+
+  const deleteNode = (node: FilterGroup, targetId: string): FilterGroup => {
+    return {
+      ...node,
+      children: node.children
+        .filter((child) => child.id !== targetId)
+        .map((child) =>
+          child.type === "group" ? deleteNode(child, targetId) : child,
+        ) as (FilterGroup | FilterCondition)[],
+    };
+  };
+
+  const addNode = (
+    node: FilterGroup,
+    parentId: string,
+    newNode: FilterNode,
+  ): FilterGroup => {
+    if (node.id === parentId) {
+      return { ...node, children: [...node.children, newNode] };
+    }
+    return {
+      ...node,
+      children: node.children.map((child) =>
+        child.type === "group" ? addNode(child, parentId, newNode) : child,
+      ) as (FilterGroup | FilterCondition)[],
+    };
+  };
+
+  // --- Handlers ---
+  const handleUpdate = (targetId: string, newNode: FilterNode) => {
+    if (targetId === rootGroup.id && newNode.type === "group") {
+      onUpdateRoot(newNode);
+    } else {
+      onUpdateRoot(
+        updateNode(rootGroup, targetId, () => newNode) as FilterGroup,
+      );
+    }
+  };
+
+  const handleDelete = (targetId: string) => {
+    onUpdateRoot(deleteNode(rootGroup, targetId));
+  };
+
+  const handleAdd = (parentId: string, type: "group" | "condition") => {
+    const id = `node-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    let newNode: FilterNode;
+
+    if (type === "group") {
+      newNode = {
+        id,
+        type: "group",
+        action: "keep",
+        logic: "AND",
+        children: [],
+        enabled: true,
+      };
+    } else {
+      const defaultMetric = stats[0]?.key || "";
+      const stat = stats.find((s) => s.key === defaultMetric);
+      newNode = {
+        id,
+        type: "condition",
+        metric: defaultMetric,
+        min: stat?.min ?? 0,
+        max: stat?.max ?? 100,
+        enabled: true,
+      };
+    }
+    onUpdateRoot(addNode(rootGroup, parentId, newNode));
+  };
+
+  const expression = getFilterExpression(rootGroup);
+
   return (
     <div
       className={css({
-        backgroundColor: "gray.900", // ダークテーマ背景
-        color: "gray.100", // 明るいテキスト
+        backgroundColor: "gray.900",
+        color: "gray.100",
         padding: "6",
         borderRadius: "xl",
         border: "1px solid token(colors.gray.700)",
@@ -38,225 +134,368 @@ export function ControlPanel({
           className={css({
             fontSize: "lg",
             fontWeight: "semibold",
-            marginBottom: "3",
             color: "white",
           })}
         >
-          Filters
+          Filters (Keep/Remove)
         </h2>
-        {/* 新規ルール追加用ドロップダウン */}
-        <select
-          className={selectStyle}
-          onChange={(e) => {
-            if (e.target.value) {
-              onAddRule(e.target.value);
-              e.target.value = ""; // Reset
-            }
-          }}
-          defaultValue=""
+        {/* Logical Expression Display */}
+        <div
+          className={css({
+            marginTop: "3",
+            padding: "3",
+            backgroundColor: "gray.950",
+            border: "1px solid token(colors.gray.700)",
+            borderRadius: "md",
+            fontFamily: "monospace",
+            fontSize: "xs",
+            color: "cyan.300",
+            wordBreak: "break-all",
+            whiteSpace: "pre-wrap",
+            lineHeight: "1.5",
+          })}
         >
-          <option value="" disabled>
-            + Add Filter Rule...
-          </option>
+          <strong>Current Logic:</strong>
+          <div className={css({ marginTop: "1" })}>
+            {expression || "No active filters"}
+          </div>
+        </div>
+      </div>
+
+      <FilterNodeView
+        node={rootGroup}
+        stats={stats}
+        depth={0}
+        maxDepth={maxDepth}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
+        onAdd={handleAdd}
+      />
+    </div>
+  );
+}
+
+// --- Recursive Component ---
+
+interface FilterNodeViewProps {
+  node: FilterNode;
+  stats: MetricStat[];
+  depth: number;
+  maxDepth: number;
+  onUpdate: (id: string, newNode: FilterNode) => void;
+  onDelete: (id: string) => void;
+  onAdd: (parentId: string, type: "group" | "condition") => void;
+}
+
+function FilterNodeView({
+  node,
+  stats,
+  depth,
+  maxDepth,
+  onUpdate,
+  onDelete,
+  onAdd,
+}: FilterNodeViewProps) {
+  if (node.type === "group") {
+    const isRoot = depth === 0;
+    const actionColor = node.action === "keep" ? "lightgreen" : "salmon";
+
+    return (
+      <div
+        className={css({
+          borderLeft: isRoot ? "none" : "2px solid token(colors.gray.700)",
+          paddingLeft: isRoot ? 0 : "4",
+          marginBottom: "4",
+        })}
+      >
+        {/* Group Header */}
+        <div
+          className={css({
+            display: "flex",
+            alignItems: "center",
+            gap: "2",
+            marginBottom: "3",
+            backgroundColor: isRoot ? "transparent" : "gray.800",
+            padding: isRoot ? 0 : "2",
+            borderRadius: "md",
+          })}
+        >
+          <span
+            className={css({
+              fontWeight: "bold",
+              fontSize: "xs",
+              color: "blue.400",
+              textTransform: "uppercase",
+            })}
+          >
+            {isRoot ? "ROOT" : "GROUP"}
+          </span>
+
+          {/* Action Select */}
+          <select
+            value={node.action}
+            onChange={(e) =>
+              onUpdate(node.id, {
+                ...node,
+                action: e.target.value as "keep" | "remove",
+              })
+            }
+            className={selectStyle}
+            style={{
+              width: "auto",
+              minWidth: "80px",
+              color: actionColor,
+              fontWeight: "bold",
+            }}
+          >
+            <option value="keep">KEEP</option>
+            <option value="remove">REMOVE</option>
+          </select>
+
+          <select
+            value={node.logic}
+            onChange={(e) =>
+              onUpdate(node.id, {
+                ...node,
+                logic: e.target.value as "AND" | "OR",
+              })
+            }
+            className={selectStyle}
+            style={{ width: "auto", minWidth: "80px" }}
+          >
+            <option value="AND">AND (All)</option>
+            <option value="OR">OR (Any)</option>
+          </select>
+
+          {!isRoot && (
+            <button
+              type="button"
+              onClick={() => onDelete(node.id)}
+              className={css({
+                marginLeft: "auto",
+                color: "gray.500",
+                cursor: "pointer",
+                "&:hover": { color: "red.400" },
+              })}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* Children */}
+        <div
+          className={css({
+            display: "flex",
+            flexDirection: "column",
+            gap: "2",
+          })}
+        >
+          {node.children.map((child) => (
+            <FilterNodeView
+              key={child.id}
+              node={child}
+              stats={stats}
+              depth={depth + 1}
+              maxDepth={maxDepth}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+              onAdd={onAdd}
+            />
+          ))}
+          {node.children.length === 0 && (
+            <div
+              className={css({
+                fontSize: "xs",
+                color: "gray.500",
+                fontStyle: "italic",
+                padding: "2",
+              })}
+            >
+              No conditions.
+            </div>
+          )}
+        </div>
+
+        {/* Add Buttons */}
+        <div className={css({ marginTop: "3", display: "flex", gap: "2" })}>
+          <button
+            type="button"
+            onClick={() => onAdd(node.id, "condition")}
+            className={btnStyle}
+          >
+            + Condition
+          </button>
+          {depth < maxDepth - 1 && (
+            <button
+              type="button"
+              onClick={() => onAdd(node.id, "group")}
+              className={btnStyle}
+            >
+              + Group
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  // Condition View
+  const stat = stats.find((s) => s.key === node.metric);
+  if (!stat) return null;
+  const step = (stat.max - stat.min) / 1000;
+
+  return (
+    <div
+      className={css({
+        backgroundColor: "gray.800",
+        padding: "3",
+        borderRadius: "lg",
+        border: "1px solid token(colors.gray.700)",
+        marginBottom: "2",
+      })}
+    >
+      <div
+        className={css({
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: "2",
+        })}
+      >
+        <select
+          value={node.metric}
+          onChange={(e) => {
+            const newMetric = e.target.value;
+            const newStat = stats.find((s) => s.key === newMetric);
+            onUpdate(node.id, {
+              ...node,
+              metric: newMetric,
+              min: newStat?.min ?? 0,
+              max: newStat?.max ?? 100,
+            });
+          }}
+          className={selectStyle}
+        >
           {stats.map((s) => (
             <option key={s.key} value={s.key}>
               {s.key}
             </option>
           ))}
         </select>
+
+        <div className={css({ display: "flex", gap: "2" })}>
+          <button
+            type="button"
+            onClick={() => onDelete(node.id)}
+            className={css({
+              color: "gray.500",
+              cursor: "pointer",
+              "&:hover": { color: "red.400" },
+            })}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      {/* Slider & Inputs */}
+      <div
+        className={css({ paddingX: "1", marginTop: "4", marginBottom: "4" })}
+      >
+        <DoubleRangeSlider
+          min={stat.min}
+          max={stat.max}
+          step={step}
+          value={[node.min, node.max]}
+          onChange={(min: number, max: number) =>
+            onUpdate(node.id, { ...node, min, max })
+          }
+        />
       </div>
 
       <div
-        className={css({ display: "flex", flexDirection: "column", gap: "4" })}
-      >
-        {rules.map((rule) => {
-          const stat = stats.find((s) => s.key === rule.metric);
-          if (!stat) return null;
-          // スライダーのステップを細かくして、保存された精密な値を再現できるようにする
-          const step = (stat.max - stat.min) / 1000;
-
-          return (
-            <div
-              key={rule.id}
-              className={css({
-                padding: "4",
-                borderRadius: "lg",
-                border: "1px solid",
-                borderColor: "gray.700",
-                backgroundColor: rule.enabled ? "gray.800" : "gray.900",
-                opacity: rule.enabled ? 1 : 0.6,
-                transition: "all 0.2s",
-                "&:hover": {
-                  borderColor: "blue.500",
-                },
-              })}
-            >
-              {/* Header */}
-              <div
-                className={css({
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "3",
-                })}
-              >
-                <div
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "2",
-                  })}
-                >
-                  <input
-                    type="checkbox"
-                    checked={rule.enabled}
-                    onChange={(e) =>
-                      onUpdateRule({ ...rule, enabled: e.target.checked })
-                    }
-                    className={css({
-                      cursor: "pointer",
-                      accentColor: "blue.500",
-                    })}
-                  />
-                  <span
-                    className={css({
-                      fontWeight: "bold",
-                      fontSize: "sm",
-                      color: "gray.200",
-                    })}
-                  >
-                    {rule.metric}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onRemoveRule(rule.id)}
-                  className={css({
-                    color: "gray.500",
-                    fontSize: "lg",
-                    lineHeight: "1",
-                    padding: "1",
-                    cursor: "pointer",
-                    transition: "color 0.2s",
-                    "&:hover": { color: "red.400" },
-                  })}
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* Mode Selection */}
-              <div className={css({ marginBottom: "4" })}>
-                <select
-                  value={rule.mode}
-                  onChange={(e) =>
-                    onUpdateRule({
-                      ...rule,
-                      mode: e.target.value as "include" | "exclude",
-                    })
-                  }
-                  className={selectStyle}
-                >
-                  <option value="include">Include (範囲内を残す)</option>
-                  <option value="exclude">Exclude (範囲内を除外)</option>
-                </select>
-              </div>
-
-              {/* Slider */}
-              <div className={css({ marginBottom: "4", paddingX: "1" })}>
-                <DoubleRangeSlider
-                  min={stat.min}
-                  max={stat.max}
-                  step={step}
-                  value={[rule.min, rule.max]}
-                  onChange={(newMin, newMax) => {
-                    onUpdateRule({ ...rule, min: newMin, max: newMax });
-                  }}
-                />
-              </div>
-
-              {/* Range Inputs (Manual Edit) */}
-              <div
-                className={css({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "2",
-                })}
-              >
-                <input
-                  type="number"
-                  value={rule.min.toFixed(2)}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (!isNaN(v)) {
-                      onUpdateRule({ ...rule, min: v });
-                    }
-                  }}
-                  className={inputStyle}
-                />
-                <span className={css({ color: "gray.500" })}>-</span>
-                <input
-                  type="number"
-                  value={rule.max.toFixed(2)}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (!isNaN(v)) {
-                      onUpdateRule({ ...rule, max: v });
-                    }
-                  }}
-                  className={inputStyle}
-                />
-              </div>
-              <div
-                className={css({
-                  fontSize: "xs",
-                  color: "gray.500",
-                  marginTop: "1",
-                  textAlign: "right",
-                })}
-              >
-                Max range: {stat.min.toFixed(2)} - {stat.max.toFixed(2)}
-              </div>
-            </div>
-          );
+        className={css({
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 2,
         })}
-        {rules.length === 0 && (
-          <div
-            className={css({
-              textAlign: "center",
-              color: "gray.500",
-              fontSize: "sm",
-              padding: "4",
-              border: "1px dashed token(colors.gray.700)",
-              borderRadius: "lg",
-            })}
-          >
-            No active filters.
-          </div>
-        )}
+      >
+        <input
+          type="number"
+          className={inputStyle}
+          value={node.min.toFixed(2)}
+          onChange={(e) =>
+            onUpdate(node.id, { ...node, min: Number(e.target.value) })
+          }
+        />
+        <span className={css({ color: "gray.500" })}>-</span>
+        <input
+          type="number"
+          className={inputStyle}
+          value={node.max.toFixed(2)}
+          onChange={(e) =>
+            onUpdate(node.id, { ...node, max: Number(e.target.value) })
+          }
+        />
       </div>
     </div>
   );
 }
 
-// 内部コンポーネント: ダブルレンジスライダー
-function DoubleRangeSlider({
-  min,
-  max,
-  value, // [min, max]
-  onChange,
-  step,
-}: {
+// Styles
+const inputStyle = css({
+  width: "100%",
+  padding: "1",
+  borderRadius: "md",
+  border: "1px solid token(colors.gray.700)",
+  fontSize: "xs",
+  backgroundColor: "gray.900",
+  color: "white",
+  "&:focus": { outline: "none", borderColor: "blue.500" },
+});
+
+const selectStyle = css({
+  width: "100%",
+  padding: "1",
+  borderRadius: "md",
+  border: "1px solid token(colors.gray.700)",
+  fontSize: "xs",
+  backgroundColor: "gray.900",
+  color: "white",
+  cursor: "pointer",
+  "&:focus": { outline: "none", borderColor: "blue.500" },
+});
+
+const btnStyle = css({
+  padding: "1 3",
+  borderRadius: "md",
+  fontSize: "xs",
+  backgroundColor: "blue.600",
+  color: "white",
+  cursor: "pointer",
+  transition: "background 0.2s",
+  "&:hover": { backgroundColor: "blue.700" },
+});
+
+// ... DoubleRangeSlider ...
+
+interface DoubleRangeSliderProps {
   min: number;
   max: number;
   value: [number, number];
   onChange: (min: number, max: number) => void;
   step: number;
-}) {
-  const [minVal, maxVal] = value;
-  const range = max - min || 1; // 0除算防止
+}
 
-  // パーセント計算
+function DoubleRangeSlider({
+  min,
+  max,
+  value,
+  onChange,
+  step,
+}: DoubleRangeSliderProps) {
+  const [minVal, maxVal] = value;
+  const range = max - min || 1;
   const getPercent = (v: number) => ((v - min) / range) * 100;
 
   return (
@@ -269,7 +508,6 @@ function DoubleRangeSlider({
         alignItems: "center",
       })}
     >
-      {/* 視覚的なトラック (背景) */}
       <div
         className={css({
           position: "absolute",
@@ -280,8 +518,6 @@ function DoubleRangeSlider({
           zIndex: 0,
         })}
       />
-
-      {/* 選択範囲のハイライト */}
       <div
         className={css({
           position: "absolute",
@@ -298,8 +534,6 @@ function DoubleRangeSlider({
           )}%`,
         }}
       />
-
-      {/* 左ハンドル (Min) */}
       <input
         type="range"
         min={min}
@@ -312,8 +546,6 @@ function DoubleRangeSlider({
         }}
         className={rangeInputStyle}
       />
-
-      {/* 右ハンドル (Max) */}
       <input
         type="range"
         min={min}
@@ -330,68 +562,34 @@ function DoubleRangeSlider({
   );
 }
 
-// Styles
-const inputStyle = css({
-  width: "100%",
-  padding: "2",
-  borderRadius: "md",
-  border: "1px solid token(colors.gray.700)",
-  fontSize: "sm",
-  backgroundColor: "gray.800",
-  color: "white",
-  "&:focus": {
-    outline: "none",
-    borderColor: "blue.500",
-    boxShadow: "0 0 0 1px token(colors.blue.500)",
-  },
-});
-
-const selectStyle = css({
-  width: "100%",
-  padding: "2",
-  borderRadius: "md",
-  border: "1px solid token(colors.gray.700)",
-  fontSize: "sm",
-  backgroundColor: "gray.800",
-  color: "white",
-  cursor: "pointer",
-  "&:focus": {
-    outline: "none",
-    borderColor: "blue.500",
-  },
-});
-
 const rangeInputStyle = css({
   position: "absolute",
   width: "100%",
-  pointerEvents: "none", // 下の要素もクリック可能に
+  pointerEvents: "none",
   appearance: "none",
   background: "transparent",
   zIndex: 1,
   margin: 0,
-
   "&::-webkit-slider-thumb": {
     pointerEvents: "auto",
     appearance: "none",
-    width: "16px",
-    height: "16px",
+    width: "14px",
+    height: "14px",
     borderRadius: "50%",
     backgroundColor: "white",
     border: "2px solid token(colors.blue.500)",
     cursor: "grab",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
     "&:active": { cursor: "grabbing" },
   },
   "&::-moz-range-thumb": {
     pointerEvents: "auto",
     appearance: "none",
-    width: "16px",
-    height: "16px",
+    width: "14px",
+    height: "14px",
     borderRadius: "50%",
     backgroundColor: "white",
     border: "2px solid token(colors.blue.500)",
     cursor: "grab",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
     "&:active": { cursor: "grabbing" },
   },
 });
