@@ -3,6 +3,7 @@
 ## 1. 概要
 本ドキュメントは、新しい入力形式 (COCO Format JSON + CSV Metrics) に対応したアノテーションページの設計について記述する。
 本機能は `src/app/annotation` の機能をベースとしつつ、将来的な Tailwind CSS + Material UI への移行を見据え、`src/app/annotation2` ディレクトリ配下で完結する構成とする。
+また、**多クラス分類、ルールベースの自動分類パイプライン、手動修正（削除・追記）** を統合した高度なアノテーションプラットフォームとして設計されている。
 
 ## 2. ディレクトリ構成
 全ての関連ファイルは `src/app/annotation2` 配下に配置する。
@@ -10,12 +11,21 @@
 ```
 src/app/annotation2/
 ├── page.tsx                  # Server Component (データ読み込み、メインエントリー)
-├── input/                    # 入力データ (origin.png, result.csv, segmentation.json, remove.json, filtered.json)
+├── input/                    # 入力データ
+│   ├── origin.png            # 元画像
+│   ├── result.csv            # メトリクスデータ
+│   ├── segmentation.json     # 領域データ (COCO)
+│   ├── classifications.json  # クラス分類結果 (ID -> CategoryID)
+│   ├── additions.json        # 手動追記データ
+│   ├── filtered.json         # 現在のフィルタ設定
+│   ├── categories.json       # クラス定義 (動的)
+│   ├── rules.json            # 分類パイプラインルール
+│   └── presets.json          # フィルタプリセット
 ├── _components/              # UIコンポーネント
-│   ├── AnnotationPageClient.tsx # クライアントサイドのエントリーポイント (State管理)
+│   ├── AnnotationPageClient.tsx # クライアントエントリーポイント (全State管理)
 │   ├── CanvasLayer.tsx       # キャンバス描画 (画像 + アノテーション)
-│   ├── ControlPanel.tsx      # フィルタリングなどの操作パネル (再帰型UI)
-│   └── ui/                   # 汎用UIパーツ (Button, Sliderなど - 移行容易性のためここに定義)
+│   ├── ControlPanel.tsx      # フィルタ条件エディタ (再帰型UI)
+│   └── ui/                   # 汎用UIパーツ (Button, Sliderなど)
 ├── _lib/                     # ビジネスロジック
 │   ├── data-loader.ts        # データの読み込みと結合ロジック
 │   └── filter-utils.ts       # フィルタリング評価・変換ロジック
@@ -30,59 +40,31 @@ src/app/annotation2/
 ### 3.1 Server Side (`page.tsx`, `_lib/data-loader.ts`)
 Next.js App Router の Server Component の利点を活かし、APIルートを経由せず、直接ファイルシステムからデータを読み込む。
 
-1.  **Load JSON**: `input/segmentation.json` (COCO Format) を読み込む。
-2.  **Load CSV**: `input/result.csv` (Metrics) を読み込む。
-3.  **Merge**:
-    *   COCOデータの `annotations` 配列を反復処理。
-    *   `id` をキーにして CSV データの該当行を検索。
-    *   `AnnotationRegion` オブジェクトを生成。
-4.  **Load Config**: `input/remove.json` (手動削除), `input/filtered.json` (フィルタ設定) を読み込む。
-5.  **Props**: 結合されたデータを `AnnotationPageClient` に渡す。
+1.  **Load Data**: `segmentation.json` (COCO) と `result.csv` (Metrics) を読み込み、`AnnotationRegion` オブジェクトの配列に結合。
+2.  **Load State**: `classifications.json`, `additions.json` を読み込み、初期状態を構築。
+3.  **Load Config**: `categories.json`, `rules.json`, `presets.json` を読み込み、設定情報を取得。
+4.  **Props**: 全てを `AnnotationPageClient` に渡す。
 
 ### 3.2 Client Side (`_components/AnnotationPageClient.tsx`)
-既存の `AnnotationCanvasClient.tsx` のロジックを移植・リファクタリングする。
+高度な状態管理とインタラクションを担当。
 
 *   **State Management**:
-    *   `regions`: 全アノテーションデータ。
-    *   `filterConfig`: 再帰的なフィルタ設定 (v3)。
-    *   `removedIds`: ユーザー操作により削除されたIDのセット。
-    *   `hoveredId`: ホバー中の領域ID。
+    *   `regions`: 初期アノテーションデータ（不変）。
+    *   `addedRegions`: 手動追記された領域（可変）。
+    *   `classifications`: 領域IDに対するクラスIDのマッピング。
+    *   `categories`: クラス定義（ID, 名前, 色）。
+    *   `rules`: 分類パイプラインのルールリスト。
+    *   `filterConfig`: 現在のフィルタ条件。
 *   **Interactions**:
-    *   フィルタリング変更 -> `evaluateFilter` (再帰評価) -> `filteredIds` 更新 -> 再描画。
-    *   キャンバス操作 -> ホバーハイライト、削除操作。
-    *   保存操作 -> Server Actions 経由で JSON ファイルを保存。
+    *   **Select / Batch Mode**: フィルタ条件による絞り込みと、ルールベースの一括クラス適用。
+    *   **Draw Mode**: キャンバス上での手動ポリゴン描画（追記）とクラス割り当て。
+    *   **Pipeline Execution**: 定義されたルール順序に従って全領域を自動再分類。
+*   **Persistence**:
+    *   変更があるたびに Server Actions 経由で JSON ファイルを即座に更新（Optimistic Update）。
 
 ## 4. データモデル (`_types/index.ts`)
 
-### 4.1 入力データ形式
-**COCO Format (segmentation.json)**
-```typescript
-interface CocoImage {
-  id: number;
-  width: number;
-  height: number;
-  file_name: string;
-}
-
-interface CocoAnnotation {
-  id: number;
-  image_id: number;
-  category_id: number;
-  bbox: [number, number, number, number]; // [x, y, width, height]
-  seg: number[][]; // [x1, y1, x2, y2, ...] (Polygon)
-}
-
-interface CocoData {
-  images: CocoImage[];
-  annotations: CocoAnnotation[];
-}
-```
-
-**CSV Metrics (result.csv)**
-*   Header: `id`, `面積(μm)^2`, `円相当径(μm)`, ...
-*   各列をキーとしたオブジェクトとしてパースする。
-
-### 4.2 アプリケーション内部データモデル
+### 4.1 アプリケーション内部データモデル
 ```typescript
 interface Point {
   x: number;
@@ -90,69 +72,64 @@ interface Point {
 }
 
 interface AnnotationRegion {
-  id: number; // CSV, JSONのIDと一致
+  id: number;
   bbox: [number, number, number, number];
-  points: Point[]; // 描画用ポリゴン
-  metrics: Record<string, number>; // CSVの全カラムデータ
+  points: Point[];
+  metrics: Record<string, number>;
+  isManualAdded?: boolean;
+  categoryId?: number; // 初期クラス
 }
 
-// フィルタリング設定 (v3: Recursive Keep/Remove System)
-type FilterAction = "keep" | "remove";
-type FilterLogic = "AND" | "OR";
+// カテゴリ定義 (動的)
+interface CategoryDef {
+  id: number;
+  name: string;
+  color: string;
+  fill: string;
+  isSystem?: boolean; // Default(1)とRemove(999)は削除不可
+}
 
-interface FilterGroup {
-  type: "group";
-  action: FilterAction;
-  logic: FilterLogic;
-  children: (FilterGroup | FilterCondition)[];
+// 分類ルール (パイプライン)
+interface ClassificationRule {
+  id: string;
+  name: string;
   enabled: boolean;
+  fromClass: number | "any"; // 適用対象の元クラス
+  toClass: number;           // 適用後のクラス
+  filter: FilterGroup;       // 適用条件
 }
 
-interface FilterCondition {
-  type: "condition";
-  metric: string;
-  min: number;
-  max: number;
-  enabled: boolean;
-}
-
+// フィルタリング設定 (v3)
 interface FilterConfig {
   version: 3;
-  root: FilterGroup;
-  maxDepth: number;
-  excludedIds: number[];
+  root: FilterGroup; // 再帰的条件ツリー (Action: Keep/Remove)
+  // ...
 }
 ```
 
-## 5. 実装ステップ
+## 5. 主要機能
 
-1.  **型定義**: `_types/index.ts` の作成。
-2.  **データローダー実装**: `_lib/data-loader.ts` で JSON と CSV を読み込み結合する処理を実装。
-3.  **UIコンポーネント移植**:
-    *   `AnnotationPageClient` の作成。
-    *   `CanvasLayer` の作成 (Canvas API を使用)。
-    *   `ControlPanel` の作成 (再帰的なフィルタ設定UI)。
-4.  **メインページ結合**: `page.tsx` でローダーとクライアントコンポーネントを接続。
+### 5.1 クラス分類 (Classification)
+*   **多クラス対応**: 従来の「削除 (Remove)」だけでなく、任意のクラス（Class 2, 3...）への分類が可能。
+*   **動的カテゴリ**: ユーザーが自由にクラスを追加・削除・色変更可能。
+*   **パレット**: 12色のプリセットカラーから選択可能。
 
-## 6. 技術的な考慮事項
-*   **Performance**: アノテーション数が多い場合、Canvas描画の最適化が必要（既存実装もCanvasなので踏襲）。
-*   **Filter Logic**: 複雑な条件 (`(A AND B) OR C`) を実現するため、再帰的な評価ロジックを実装。
-*   **UI Design**: フィルタ設定パネルは視認性を高めるためダークテーマを採用。論理式を可視化して表示する。
+### 5.2 フィルタリングと一括処理 (Batch Processing)
+*   **Filter Condition**: 面積、円形度などのメトリクスに基づく条件設定（AND/OR, グループ化対応）。
+*   **Visual Preview**: 条件に合致する（または除外される）領域を、適用先のクラス色でプレビュー表示。
+*   **From/To**: 「Class 1 の中から、条件Xを満たすものを Remove にする」といった細かい制御が可能。
 
-## 7. 将来の移行 (Tailwind + MUI)
-*   `_components/ui` 内のコンポーネントを MUI コンポーネントに差し替える。
-*   レイアウト用の Panda CSS (`css({...})`, `Stack`, `HStack` 等) を Tailwind のクラス (`flex gap-4` 等) に書き換える。
-*   この設計により、ロジック部分 (`_lib`, `AnnotationPageClient` のステート管理) はほぼそのまま再利用可能となる。
+### 5.3 自動分類パイプライン (Pipeline)
+*   **Rule Based**: 複数の変換ルールをリストとして管理。
+*   **Sequential Execution**: リストの上から順にルールを適用し、複雑な分類ロジックを一括実行。
+*   **Persistence**: ルールセットは `rules.json` に保存され、再現性を確保。
 
-## 8. 機能拡張履歴
-*   **高度なフィルタリング**:
-    *   再帰的なグループ構造による条件設定。
-    *   各グループに対して「残す (Keep)」か「除外する (Remove)」かのアクションを指定可能。
-    *   論理結合 (AND/OR) の切り替え。
-    *   現在のフィルタ論理式の可視化表示。
-*   **UI/UX改善**:
-    *   ダークテーマへの対応 (ControlPanel)。
-    *   ダブルレンジスライダーによる直感的な範囲指定。
-    *   削除済み領域の強調表示 (赤色)。
-*   **設定の永続化**:
-    *   `filtered.json` への設定保存と読み込み。
+### 5.4 手動修正 (Manual Editing)
+*   **Click to Classify**: 個別の領域をクリックしてクラスを変更。
+*   **Draw Mode**: 検出漏れの領域をポリゴン描画で追加。
+*   **Delete**: 手動追加領域の削除。
+
+## 6. 将来の展望
+*   **Tailwind + MUI**: コンポーネントレベルでの移行準備済み。
+*   **Undo/Redo**: 複雑な操作が増えたため、履歴管理の実装が望ましい。
+*   **AI Integration**: 現在のルールベースに加え、AIモデルによる推論結果の統合。

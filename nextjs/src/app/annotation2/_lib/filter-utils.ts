@@ -5,9 +5,11 @@ import type { AnnotationRegion, FilterConfig, FilterNode } from "../_types";
 export function evaluateFilter(
   node: FilterNode,
   region: AnnotationRegion,
+  ignoreManualFlag: boolean = false,
 ): boolean {
   // 手動追加された領域は常にフィルタを通過させる（表示する）
-  if (region.isManualAdded) return true;
+  // ただし、パイプライン実行時などはフラグで無効化する
+  if (!ignoreManualFlag && region.isManualAdded) return true;
 
   if (!node.enabled) return true; // 無効なノードは判定に影響させない（Pass扱い）
 
@@ -23,7 +25,9 @@ export function evaluateFilter(
     if (activeChildren.length === 0) return true; // 空グループはPass
 
     // 子要素の評価
-    const results = activeChildren.map((c) => evaluateFilter(c, region));
+    const results = activeChildren.map((c) =>
+      evaluateFilter(c, region, ignoreManualFlag),
+    );
 
     // 結合 (Logic)
     let isMatch = false;

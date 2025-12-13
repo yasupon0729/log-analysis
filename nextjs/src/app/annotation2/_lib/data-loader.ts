@@ -1,11 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type {
-  AnnotationRegion,
-  CocoData,
-  FilterConfig,
-  MetricStat,
-  Point,
+import {
+  type AnnotationRegion,
+  type CategoryDef,
+  type ClassificationRule,
+  type CocoData,
+  DEFAULT_CATEGORIES,
+  type FilterConfig,
+  type FilterPreset,
+  type MetricStat,
+  type Point,
 } from "../_types";
 
 // 入力ファイルが配置されているディレクトリパス
@@ -27,15 +31,21 @@ const INPUT_DIR = path.join(process.cwd(), "src/app/annotation2/input");
  *    `MetricStat` オブジェクトの配列として返します。これはフィルタリングUIのスライダーの範囲設定などに利用されます。
  * 5. `remove.json` (存在する場合) を読み込み、削除済みのアノテーションIDのリストを返します。
  * 6. `filtered.json` (存在する場合) を読み込み、保存されたフィルター設定を返します。
+ * 7. `presets.json` (存在する場合) を読み込み、保存されたフィルタープリセットを返します。
+ * 8. `categories.json` (存在する場合) を読み込み、カテゴリ定義を返します。
+ * 9. `rules.json` (存在する場合) を読み込み、分類ルールを返します。
  *
- * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; removedIds: number[]; filterConfig: FilterConfig | null; addedRegions: AnnotationRegion[]; }>}
+ * @returns {Promise<{ regions: AnnotationRegion[]; stats: MetricStat[]; classifications: Record<number, number>; filterConfig: FilterConfig | null; addedRegions: AnnotationRegion[]; presets: FilterPreset[]; categories: CategoryDef[]; rules: ClassificationRule[]; }>}
  */
 export async function loadAnnotationData(): Promise<{
   regions: AnnotationRegion[];
   stats: MetricStat[];
-  removedIds: number[];
+  classifications: Record<number, number>;
   filterConfig: FilterConfig | null;
   addedRegions: AnnotationRegion[];
+  presets: FilterPreset[];
+  categories: CategoryDef[];
+  rules: ClassificationRule[];
 }> {
   // 1. segmentation.json (COCO Format) の読み込み
   const jsonPath = path.join(INPUT_DIR, "segmentation.json");
@@ -65,14 +75,30 @@ export async function loadAnnotationData(): Promise<{
     csvMap.set(id, metrics);
   }
 
-  // 3. remove.json の読み込み
-  let removedIds: number[] = [];
+  // 3. remove.json & classification.json の読み込み
+  const classifications: Record<number, number> = {};
+
+  // Legacy: remove.json -> 999 (Trash)
   try {
     const removeJsonPath = path.join(INPUT_DIR, "remove.json");
     const removeJsonContent = await fs.readFile(removeJsonPath, "utf-8");
     const removeData = JSON.parse(removeJsonContent);
     if (Array.isArray(removeData.removedIds)) {
-      removedIds = removeData.removedIds;
+      removeData.removedIds.forEach((id: number) => {
+        classifications[id] = 999;
+      });
+    }
+  } catch (error) {
+    // ignore
+  }
+
+  // classification.json -> merge
+  try {
+    const classJsonPath = path.join(INPUT_DIR, "classification.json");
+    const classJsonContent = await fs.readFile(classJsonPath, "utf-8");
+    const classData = JSON.parse(classJsonContent);
+    if (classData.classifications) {
+      Object.assign(classifications, classData.classifications);
     }
   } catch (error) {
     // ignore
@@ -85,8 +111,10 @@ export async function loadAnnotationData(): Promise<{
     const filterJsonContent = await fs.readFile(filterJsonPath, "utf-8");
     filterConfig = JSON.parse(filterJsonContent);
     console.log("[DataLoader] Loaded filter config v", filterConfig?.version);
-  } catch (error) {
-    console.error("[DataLoader] Failed to load filtered.json:", error);
+  } catch (error: any) {
+    if (error.code !== "ENOENT") {
+      console.error("[DataLoader] Failed to load filtered.json:", error);
+    }
   }
 
   // 5. additions.json の読み込み (手動追加領域)
@@ -118,7 +146,46 @@ export async function loadAnnotationData(): Promise<{
     // ignore (ファイルがない場合は空リスト)
   }
 
-  // 6. データ結合 & メトリクス統計情報の計算
+  // 6. presets.json の読み込み (フィルタープリセット)
+  let presets: FilterPreset[] = [];
+  try {
+    const presetsPath = path.join(INPUT_DIR, "presets.json");
+    const presetsContent = await fs.readFile(presetsPath, "utf-8");
+    const presetsData = JSON.parse(presetsContent);
+    if (Array.isArray(presetsData.presets)) {
+      presets = presetsData.presets;
+    }
+  } catch (error) {
+    // ignore
+  }
+
+  // 7. categories.json の読み込み (カテゴリ定義)
+  let categories: CategoryDef[] = DEFAULT_CATEGORIES;
+  try {
+    const categoriesPath = path.join(INPUT_DIR, "categories.json");
+    const categoriesContent = await fs.readFile(categoriesPath, "utf-8");
+    const categoriesData = JSON.parse(categoriesContent);
+    if (Array.isArray(categoriesData.categories)) {
+      categories = categoriesData.categories;
+    }
+  } catch (error) {
+    // ignore
+  }
+
+  // 8. rules.json の読み込み (ルール)
+  let rules: ClassificationRule[] = [];
+  try {
+    const rulesPath = path.join(INPUT_DIR, "rules.json");
+    const rulesContent = await fs.readFile(rulesPath, "utf-8");
+    const rulesData = JSON.parse(rulesContent);
+    if (Array.isArray(rulesData.rules)) {
+      rules = rulesData.rules;
+    }
+  } catch (error) {
+    // ignore
+  }
+
+  // 9. データ結合 & メトリクス統計情報の計算
   const regions: AnnotationRegion[] = [];
   const statMap = new Map<string, { min: number; max: number }>();
 
@@ -176,8 +243,11 @@ export async function loadAnnotationData(): Promise<{
   return {
     regions,
     stats,
-    removedIds,
+    classifications,
     filterConfig,
     addedRegions,
+    presets,
+    categories,
+    rules,
   };
 }

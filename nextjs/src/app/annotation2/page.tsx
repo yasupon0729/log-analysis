@@ -7,8 +7,16 @@ const ORIGIN_IMAGE_URL = "/annotation2/image";
 export default async function AnnotationPageV2() {
   // 1. データローダーを呼び出し、アノテーション領域とメトリクス統計データを取得
   // filterConfigも取得して初期状態としてクライアントに渡す
-  const { regions, stats, removedIds, filterConfig, addedRegions } =
-    await loadAnnotationData();
+  const {
+    regions,
+    stats,
+    filterConfig,
+    addedRegions,
+    classifications,
+    presets,
+    categories,
+    rules,
+  } = await loadAnnotationData();
 
   // 2. クライアントコンポーネントにデータを渡してレンダリング
   return (
@@ -16,9 +24,12 @@ export default async function AnnotationPageV2() {
       initialRegions={regions}
       stats={stats}
       imageUrl={ORIGIN_IMAGE_URL}
-      initialRemovedIds={removedIds}
       initialFilterConfig={filterConfig}
       initialAddedRegions={addedRegions}
+      initialClassifications={classifications}
+      initialPresets={presets}
+      initialCategories={categories}
+      initialRules={rules}
     />
   );
 }

@@ -1,5 +1,55 @@
 // src/app/annotation2/_types/index.ts
 
+export interface CategoryDef {
+  id: number;
+  name: string;
+  color: string;
+  fill: string;
+  isSystem?: boolean;
+}
+
+export const DEFAULT_CATEGORIES: CategoryDef[] = [
+  {
+    id: 1,
+    name: "Default (Class 1)",
+    color: "#06b6d4",
+    fill: "rgba(6, 182, 212, 0.25)",
+    isSystem: true,
+  },
+  {
+    id: 999,
+    name: "Remove (Trash)",
+    color: "#dc2626",
+    fill: "rgba(239, 68, 68, 0.35)",
+    isSystem: true,
+  },
+];
+
+export const PRESET_COLORS = [
+  "#ef4444", // Red
+  "#f97316", // Orange
+  "#f59e0b", // Amber
+  "#eab308", // Yellow
+  "#84cc16", // Lime
+  "#22c55e", // Green
+  "#10b981", // Emerald
+  "#06b6d4", // Cyan
+  "#3b82f6", // Blue
+  "#6366f1", // Indigo
+  "#a855f7", // Purple
+  "#ec4899", // Pink
+];
+
+export function getCategoryMap(
+  categories: CategoryDef[],
+): Record<number, CategoryDef> {
+  const map: Record<number, CategoryDef> = {};
+  categories.forEach((c) => {
+    map[c.id] = c;
+  });
+  return map;
+}
+
 // 汎用的な2次元座標点
 export interface Point {
   x: number;
@@ -13,6 +63,7 @@ export interface AnnotationRegion {
   points: Point[];
   metrics: Record<string, number>;
   isManualAdded?: boolean; // 手動追加された領域かどうか
+  categoryId?: number; // クラスID (デフォルト: 1)
 }
 
 // 各メトリクスの統計情報
@@ -78,4 +129,24 @@ export interface FilterConfig {
   root: FilterGroup;
   maxDepth: number;
   excludedIds: number[];
+}
+
+export interface FilterPreset {
+  id: string;
+  name: string;
+  config: FilterConfig;
+}
+
+export interface ClassificationRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  fromClass: number | "any";
+  toClass: number;
+  filter: FilterGroup;
+}
+
+export interface PipelineConfig {
+  version: 1;
+  rules: ClassificationRule[];
 }

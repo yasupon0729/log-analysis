@@ -2,18 +2,28 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { css } from "../../../../styled-system/css";
-import { calculateBBox } from "../_utils/geometry";
 import { createDefaultConfig, evaluateFilter } from "../_lib/filter-utils";
-import type {
-  AnnotationRegion,
-  FilterConfig,
-  FilterGroup,
-  MetricStat,
-} from "../_types";
 import {
+  type AnnotationRegion,
+  type CategoryDef,
+  type ClassificationRule,
+  DEFAULT_CATEGORIES,
+  type FilterConfig,
+  type FilterGroup,
+  type FilterPreset,
+  getCategoryMap,
+  type MetricStat,
+  PRESET_COLORS,
+} from "../_types";
+import { calculateBBox } from "../_utils/geometry";
+import {
+  deleteFilterPreset,
   saveAddedAnnotations,
+  saveCategories,
+  saveClassifications,
   saveFilterConfig,
-  saveRemovedAnnotations,
+  saveFilterPreset,
+  savePipeline,
 } from "../actions";
 import { CanvasLayer } from "./CanvasLayer";
 import { ControlPanel } from "./ControlPanel";
@@ -22,9 +32,13 @@ interface AnnotationPageClientProps {
   initialRegions: AnnotationRegion[];
   stats: MetricStat[];
   imageUrl: string;
-  initialRemovedIds?: number[]; // 初期ロード時の削除済みID
-  initialFilterConfig?: FilterConfig | null; // 初期ロード時のフィルタ設定
-  initialAddedRegions?: AnnotationRegion[]; // 初期ロード時の追加領域
+  initialRemovedIds?: number[]; // Legacy
+  initialClassifications?: Record<number, number>;
+  initialFilterConfig?: FilterConfig | null;
+  initialAddedRegions?: AnnotationRegion[];
+  initialPresets?: FilterPreset[];
+  initialCategories?: CategoryDef[];
+  initialRules?: ClassificationRule[];
 }
 
 export function AnnotationPageClient({
@@ -32,32 +46,49 @@ export function AnnotationPageClient({
   stats,
   imageUrl,
   initialRemovedIds = [],
+  initialClassifications = {},
   initialFilterConfig = null,
   initialAddedRegions = [],
+  initialPresets = [],
+  initialCategories = DEFAULT_CATEGORIES,
+  initialRules = [],
 }: AnnotationPageClientProps) {
-  // ユーザーによって手動で削除された領域のIDを管理
-  const [removedIds, setRemovedIds] = useState<Set<number>>(
-    new Set(initialRemovedIds),
+  // Categories State
+  const [categories, setCategories] =
+    useState<CategoryDef[]>(initialCategories);
+  const categoryMap = useMemo(() => getCategoryMap(categories), [categories]);
+
+  const [classifications, setClassifications] = useState<Map<number, number>>(
+    () => {
+      const map = new Map<number, number>();
+      initialRemovedIds.forEach((id) => {
+        map.set(id, 999);
+      });
+      Object.entries(initialClassifications).forEach(([id, cat]) => {
+        map.set(Number(id), Number(cat));
+      });
+      return map;
+    },
   );
-  // 現在マウスがホバーしている領域のIDを管理
+
+  const [presets, setPresets] = useState<FilterPreset[]>(initialPresets);
+  const [rules, setRules] = useState<ClassificationRule[]>(initialRules);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+
+  const [fromClassId, setFromClassId] = useState<number | "any">(1);
+  const [activeCategory, setActiveCategory] = useState<number>(999); // Default: Remove
+  const [editingColorId, setEditingColorId] = useState<number | null>(null);
+
   const [hoveredId, setHoveredId] = useState<number | null>(null);
-
-  // 手動で追加された領域の管理
-  const [addedRegions, setAddedRegions] = useState<AnnotationRegion[]>(
-    initialAddedRegions,
-  );
-
-  // モード管理: select (削除/復元) | draw (追記)
+  const [addedRegions, setAddedRegions] =
+    useState<AnnotationRegion[]>(initialAddedRegions);
   const [editMode, setEditMode] = useState<"select" | "draw">("select");
-
-  // 保存処理の状態管理
   const [isSaving, startTransition] = useTransition();
   const [saveMessage, setSaveMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
 
-  // フィルタ設定の状態管理 (v2 -> v3)
   const [filterConfig, setFilterConfig] = useState<FilterConfig>(() => {
     if (initialFilterConfig && initialFilterConfig.version === 3) {
       return initialFilterConfig;
@@ -65,7 +96,6 @@ export function AnnotationPageClient({
     return createDefaultConfig();
   });
 
-  // 初期設定の同期
   useEffect(() => {
     if (initialFilterConfig && initialFilterConfig.version === 3) {
       console.log("[AnnotationPageClient] Applying initial filter config v3");
@@ -73,125 +103,361 @@ export function AnnotationPageClient({
     }
   }, [initialFilterConfig]);
 
-  // 全領域（初期ロード分 + 手動追加分）
   const allRegions = useMemo(() => {
     return [...initialRegions, ...addedRegions];
   }, [initialRegions, addedRegions]);
 
-  // フィルタリングロジック (再帰評価)
   const filteredIds = useMemo(() => {
     const ids = new Set<number>();
-
-    // Rootが無効ならフィルタリングなし
     if (!filterConfig.root.enabled) return ids;
 
     for (const region of allRegions) {
-      // Rootグループから評価開始
-      // evaluateFilter: true = Pass (表示), false = Block (除外)
-      // したがって、false の場合に filteredIds に追加する
+      const currentCat =
+        classifications.get(region.id) ?? region.categoryId ?? 1;
+      if (fromClassId !== "any" && currentCat !== fromClassId) {
+        continue;
+      }
       if (!evaluateFilter(filterConfig.root, region)) {
         ids.add(region.id);
       }
     }
     return ids;
-  }, [allRegions, filterConfig]);
+  }, [allRegions, filterConfig, classifications, fromClassId]);
 
-  // クリックされた領域のIDをremovedIdsに追加または削除するハンドラ
   const handleRegionClick = (id: number) => {
-    // 手動追加された領域は、クリックでの削除（非表示化）対象外とする
-    // 削除したい場合は「追記リスト」から削除する
     const target = allRegions.find((r) => r.id === id);
     if (target?.isManualAdded) return;
 
-    setRemovedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id); // 既に削除済みなら元に戻す
+    setClassifications((prev) => {
+      const next = new Map(prev);
+      const currentCat = next.get(id);
+      if (currentCat === activeCategory) {
+        next.delete(id);
       } else {
-        next.add(id); // 未削除なら削除リストに追加
+        next.set(id, activeCategory);
       }
       return next;
     });
   };
 
-  // 範囲選択で指定されたIDリストを一括削除（または復元）するハンドラ
   const handleRangeSelect = (ids: number[]) => {
-    setRemovedIds((prev) => {
-      const next = new Set(prev);
+    setClassifications((prev) => {
+      const next = new Map(prev);
       ids.forEach((id) => {
-        // 手動追加領域は除外
         const target = allRegions.find((r) => r.id === id);
         if (target?.isManualAdded) return;
-
-        if (next.has(id)) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
+        next.set(id, activeCategory);
       });
       return next;
     });
   };
 
-  // 領域追加ハンドラ
+  // --- Pipeline Management ---
+
+  const updateRules = (newRules: ClassificationRule[]) => {
+    setRules(newRules);
+    startTransition(async () => {
+      await savePipeline(newRules);
+    });
+  };
+
+  const handleAddRule = () => {
+    const name = window.prompt("Rule Name:", `Rule ${rules.length + 1}`);
+    if (!name) return;
+
+    const newRule: ClassificationRule = {
+      id: crypto.randomUUID(),
+      name,
+      enabled: true,
+      fromClass: fromClassId,
+      toClass: activeCategory,
+      filter: JSON.parse(JSON.stringify(filterConfig.root)), // Deep copy
+    };
+
+    updateRules([...rules, newRule]);
+  };
+
+  const handleDeleteRule = (ruleId: string) => {
+    if (!confirm("Delete this rule?")) return;
+    updateRules(rules.filter((r) => r.id !== ruleId));
+  };
+
+  const handleMoveRule = (index: number, direction: -1 | 1) => {
+    const newRules = [...rules];
+    if (index + direction < 0 || index + direction >= newRules.length) return;
+    const temp = newRules[index];
+    newRules[index] = newRules[index + direction];
+    newRules[index + direction] = temp;
+    updateRules(newRules);
+  };
+
+  const handleToggleRule = (ruleId: string) => {
+    updateRules(
+      rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r)),
+    );
+  };
+
+  const handleRunPipeline = () => {
+    if (!confirm(`Run ${rules.filter((r) => r.enabled).length} rules?`)) return;
+
+    setClassifications((prev) => {
+      const next = new Map(prev);
+
+      rules
+        .filter((r) => r.enabled)
+        .forEach((rule) => {
+          // Find matching regions
+          const targets: number[] = [];
+          for (const region of allRegions) {
+            // Current class check
+            const currentCat = next.get(region.id) ?? region.categoryId ?? 1;
+            if (rule.fromClass !== "any" && currentCat !== rule.fromClass)
+              continue;
+
+            // Filter check (evaluateFilter returns false if "Removed" by filter)
+            if (!evaluateFilter(rule.filter, region, true)) {
+              targets.push(region.id);
+            }
+          }
+
+          // Apply changes
+          targets.forEach((id) => {
+            next.set(id, rule.toClass);
+          });
+        });
+
+      return next;
+    });
+
+    setSaveMessage({
+      type: "success",
+      text: "Pipeline executed successfully.",
+    });
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  // --- Manual Actions ---
+
   const handleAddRegion = (points: { x: number; y: number }[]) => {
-    // 負のIDを使用して既存IDとの衝突を避ける
     const id = -1 * Date.now();
     const bbox = calculateBBox(points);
-
     const newRegion: AnnotationRegion = {
       id,
       bbox,
       points,
-      metrics: {}, // メトリクスなし
-      isManualAdded: true, // 手動追加フラグ
+      metrics: {},
+      isManualAdded: true,
+      categoryId: activeCategory,
     };
-
     setAddedRegions((prev) => [...prev, newRegion]);
   };
 
-  // 追記領域の削除ハンドラ
   const handleRemoveAddedRegion = (id: number) => {
     setAddedRegions((prev) => prev.filter((r) => r.id !== id));
   };
 
-  // フィルタ設定更新ハンドラ
   const handleUpdateRoot = (newRoot: FilterGroup) => {
-    setFilterConfig((prev) => ({ ...prev, root: newRoot }));
+    setFilterConfig((prev) => ({
+      ...prev,
+      root: { ...newRoot, enabled: true },
+    }));
   };
 
-  // 保存ボタンのハンドラ
   const handleSave = () => {
     setSaveMessage(null);
     startTransition(async () => {
-      // 1. 手動削除IDの保存 (remove.json)
-      const removeResult = await saveRemovedAnnotations(Array.from(removedIds));
+      const classObj = Object.fromEntries(classifications);
+      const classResult = await saveClassifications(classObj);
 
-      // 2. フィルタ設定と除外IDの保存 (filtered.json)
       const configToSave: FilterConfig = {
         ...filterConfig,
         excludedIds: Array.from(filteredIds),
       };
       const filterResult = await saveFilterConfig(configToSave);
 
-      // 3. 手動追加領域の保存 (additions.json)
       const addResult = await saveAddedAnnotations(addedRegions);
 
-      if (removeResult.success && filterResult.success && addResult.success) {
+      if (classResult.success && filterResult.success && addResult.success) {
         setSaveMessage({
           type: "success",
-          text: "保存しました (remove, filtered, additions)",
+          text: "All changes saved successfully.",
         });
         setTimeout(() => setSaveMessage(null), 3000);
       } else {
         const errorMsgs = [];
-        if (!removeResult.success) errorMsgs.push(removeResult.message);
+        if (!classResult.success) errorMsgs.push(classResult.message);
         if (!filterResult.success) errorMsgs.push(filterResult.message);
         if (!addResult.success) errorMsgs.push(addResult.message);
         setSaveMessage({
           type: "error",
-          text: `保存失敗: ${errorMsgs.join(", ")}`,
+          text: `Save failed: ${errorMsgs.join(", ")}`,
         });
+      }
+    });
+  };
+
+  const removedCount = Array.from(classifications.values()).filter(
+    (c) => c === 999,
+  ).length;
+
+  const handleBulkClassify = (targetClassId: number) => {
+    setClassifications((prev) => {
+      const next = new Map(prev);
+      filteredIds.forEach((id) => {
+        next.set(id, targetClassId);
+      });
+      return next;
+    });
+
+    setFilterConfig((prev) => ({
+      ...prev,
+      root: { ...prev.root, enabled: false },
+    }));
+
+    setSaveMessage({
+      type: "success",
+      text: `Applied Class ${targetClassId} to ${filteredIds.size} regions and reset filter.`,
+    });
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  // --- Category Management ---
+
+  const handleAddCategory = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+
+    const ids = categories.map((c) => c.id);
+    const maxId = ids.length > 0 ? Math.max(...ids) : 0;
+    let newId = maxId + 1;
+    if (newId === 999) newId = 1000;
+
+    const hue = Math.floor(Math.random() * 360);
+    const color = `hsl(${hue}, 70%, 50%)`;
+    const fill = `hsla(${hue}, 70%, 50%, 0.25)`;
+
+    const newCat: CategoryDef = {
+      id: newId,
+      name: `Class ${newId}`,
+      color,
+      fill,
+    };
+
+    const nextCategories = [...categories, newCat];
+    setCategories(nextCategories);
+    startTransition(async () => {
+      await saveCategories(nextCategories);
+    });
+  };
+
+  const handleUpdateCategoryColor = (id: number, color: string) => {
+    // Hex to RGBA
+    const r = Number.parseInt(color.slice(1, 3), 16);
+    const g = Number.parseInt(color.slice(3, 5), 16);
+    const b = Number.parseInt(color.slice(5, 7), 16);
+    const fill = `rgba(${r}, ${g}, ${b}, 0.25)`;
+
+    const newCategories = categories.map((c) =>
+      c.id === id ? { ...c, color, fill } : c,
+    );
+
+    setCategories(newCategories);
+    setEditingColorId(null);
+
+    startTransition(async () => {
+      await saveCategories(newCategories);
+    });
+  };
+
+  const handleDeleteCategory = (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 1. System check
+    const target = categories.find((c) => c.id === id);
+    if (target?.isSystem) {
+      alert("Cannot delete system category.");
+      return;
+    }
+
+    // 2. Usage check
+    const usedInClassifications = Array.from(classifications.values()).includes(
+      id,
+    );
+    const usedInAdditions = addedRegions.some((r) => r.categoryId === id);
+    const usedInInitial = initialRegions.some((r) => r.categoryId === id);
+
+    if (usedInClassifications || usedInAdditions || usedInInitial) {
+      alert("Cannot delete category: It is currently in use.");
+      return;
+    }
+
+    if (!confirm(`Delete category "${target?.name}"?`)) return;
+
+    const newCategories = categories.filter((c) => c.id !== id);
+    setCategories(newCategories);
+
+    if (activeCategory === id) setActiveCategory(999);
+
+    startTransition(async () => {
+      await saveCategories(newCategories);
+    });
+  };
+
+  // --- Preset Handlers ---
+
+  const handleSavePreset = () => {
+    const name = window.prompt(
+      "Enter preset name (e.g., 'Remove Small Debris'):",
+      "",
+    );
+    if (!name) return;
+
+    const newPreset: FilterPreset = {
+      id: crypto.randomUUID(),
+      name,
+      config: filterConfig,
+    };
+
+    startTransition(async () => {
+      const result = await saveFilterPreset(newPreset);
+      if (result.success) {
+        setPresets(result.presets);
+        setSaveMessage({ type: "success", text: "Preset saved." });
+        setTimeout(() => setSaveMessage(null), 2000);
+        setSelectedPresetId(newPreset.id);
+      } else {
+        alert(result.message);
+      }
+    });
+  };
+
+  const handleLoadPreset = (presetId: string) => {
+    const preset = presets.find((p) => p.id === presetId);
+    if (preset) {
+      setFilterConfig({ ...preset.config, version: 3 });
+      setSaveMessage({
+        type: "success",
+        text: `Loaded preset: ${preset.name}`,
+      });
+      setTimeout(() => setSaveMessage(null), 2000);
+    }
+  };
+
+  const handleDeletePreset = () => {
+    if (!selectedPresetId) return;
+    // eslint-disable-next-line no-alert
+    if (!confirm("Are you sure you want to delete this preset?")) return;
+
+    startTransition(async () => {
+      const result = await deleteFilterPreset(selectedPresetId);
+      if (result.success) {
+        setPresets(result.presets);
+        setSelectedPresetId("");
+        setSaveMessage({ type: "success", text: "Preset deleted." });
+        setTimeout(() => setSaveMessage(null), 2000);
+      } else {
+        alert(result.message);
       }
     });
   };
@@ -208,15 +474,21 @@ export function AnnotationPageClient({
           marginBottom: "6",
         })}
       >
-        <h1 className={css({ fontSize: "2xl", fontWeight: "bold" })}>
-          Annotation Tool V2 (Recursive Filter)
+        <h1
+          className={css({
+            fontSize: "2xl",
+            fontWeight: "bold",
+            color: "gray.900",
+          })}
+        >
+          Annotation Tool V2 (Classification Pipeline)
         </h1>
       </div>
 
       <div
         className={css({
           display: "grid",
-          gridTemplateColumns: "1fr 400px", // パネルを少し広くする
+          gridTemplateColumns: "1fr 400px",
           gap: "8",
           alignItems: "start",
         })}
@@ -234,25 +506,27 @@ export function AnnotationPageClient({
             imageSrc={imageUrl}
             width={1200}
             height={900}
-            regions={allRegions} // 全領域を渡す
+            regions={allRegions}
             filteredIds={filteredIds}
-            removedIds={removedIds}
+            classifications={classifications}
+            activeCategory={activeCategory}
+            categoryMap={categoryMap}
             hoveredId={hoveredId}
             editMode={editMode}
             onHover={setHoveredId}
             onClick={handleRegionClick}
             onRangeSelect={handleRangeSelect}
-            onAddRegion={handleAddRegion} // 追加
+            onAddRegion={handleAddRegion}
           />
           <div
             className={css({
               marginTop: "4",
               fontSize: "sm",
-              color: "gray.600",
+              color: "gray.700",
             })}
           >
-            Total Regions: {allRegions.length} (Added: {addedRegions.length}) |
-            Filtered: {filteredIds.size} | Removed: {removedIds.size}
+            Total: {allRegions.length} (Added: {addedRegions.length}) | Target
+            (Filtered): {filteredIds.size} | Removed(999): {removedCount}
           </div>
         </div>
 
@@ -264,7 +538,7 @@ export function AnnotationPageClient({
             gap: "6",
           })}
         >
-          {/* 保存エリア */}
+          {/* Mode Switch */}
           <div
             className={css({
               padding: "4",
@@ -274,10 +548,7 @@ export function AnnotationPageClient({
               boxShadow: "sm",
             })}
           >
-            {/* モード切替 */}
-            <div
-              className={css({ display: "flex", gap: "2", marginBottom: "4" })}
-            >
+            <div className={css({ display: "flex", gap: "2" })}>
               <button
                 type="button"
                 onClick={() => setEditMode("select")}
@@ -290,13 +561,11 @@ export function AnnotationPageClient({
                   cursor: "pointer",
                   backgroundColor:
                     editMode === "select" ? "blue.600" : "gray.200",
-                  color: editMode === "select" ? "white" : "gray.700",
-                  "&:hover": {
-                    opacity: 0.9,
-                  },
+                  color: editMode === "select" ? "white" : "gray.800",
+                  "&:hover": { opacity: 0.9 },
                 })}
               >
-                選択 / 削除
+                Pipeline / Classify
               </button>
               <button
                 type="button"
@@ -310,61 +579,452 @@ export function AnnotationPageClient({
                   cursor: "pointer",
                   backgroundColor:
                     editMode === "draw" ? "blue.600" : "gray.200",
-                  color: editMode === "draw" ? "white" : "gray.700",
-                  "&:hover": {
-                    opacity: 0.9,
-                  },
+                  color: editMode === "draw" ? "white" : "gray.800",
+                  "&:hover": { opacity: 0.9 },
                 })}
               >
-                追記 (Draw)
+                Draw (Add)
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving}
-              className={css({
-                width: "100%",
-                padding: "3",
-                backgroundColor: isSaving ? "gray.400" : "blue.600",
-                color: "white",
-                borderRadius: "md",
-                fontWeight: "semibold",
-                cursor: isSaving ? "not-allowed" : "pointer",
-                transition: "background-color 0.2s",
-                "&:hover": {
-                  backgroundColor: isSaving ? "gray.400" : "blue.700",
-                },
-              })}
-            >
-              {isSaving
-                ? "保存中..."
-                : "変更を保存 (remove, filtered, additions)"}
-            </button>
-            {saveMessage && (
-              <div
-                className={css({
-                  marginTop: "3",
-                  fontSize: "sm",
-                  color:
-                    saveMessage.type === "success" ? "green.600" : "red.600",
-                  fontWeight: "medium",
-                  textAlign: "center",
-                })}
-              >
-                {saveMessage.text}
-              </div>
-            )}
           </div>
 
-          {/* 追記リスト (Drawモード時のみ表示) */}
+          {/* === SELECT MODE: PIPELINE EDITOR === */}
+          {editMode === "select" && (
+            <div
+              className={css({
+                padding: "4",
+                backgroundColor: "white",
+                borderRadius: "xl",
+                border: "1px solid token(colors.gray.200)",
+                boxShadow: "sm",
+              })}
+            >
+              <h3
+                className={css({
+                  fontSize: "md",
+                  fontWeight: "bold",
+                  marginBottom: "4",
+                  color: "gray.900",
+                  borderBottom: "1px solid token(colors.gray.200)",
+                  paddingBottom: "2",
+                })}
+              >
+                Rule Editor
+              </h3>
+
+              {/* 1. Class Selection */}
+              <div className={css({ marginBottom: "6" })}>
+                <div
+                  className={css({
+                    display: "grid",
+                    gridTemplateColumns: "1fr 20px 1fr",
+                    gap: "2",
+                    alignItems: "center",
+                  })}
+                >
+                  {/* From Class */}
+                  <div>
+                    <label
+                      className={css({
+                        fontSize: "xs",
+                        fontWeight: "bold",
+                        color: "gray.700",
+                        display: "block",
+                        marginBottom: "1",
+                      })}
+                    >
+                      From Class
+                    </label>
+                    <select
+                      className={css({
+                        width: "100%",
+                        padding: "2",
+                        borderRadius: "md",
+                        border: "1px solid token(colors.gray.300)",
+                        fontSize: "sm",
+                        cursor: "pointer",
+                        backgroundColor: "white",
+                        color: "gray.900",
+                      })}
+                      value={fromClassId}
+                      onChange={(e) =>
+                        setFromClassId(
+                          e.target.value === "any"
+                            ? "any"
+                            : Number(e.target.value),
+                        )
+                      }
+                    >
+                      <option value="any">Any Class</option>
+                      {categories.map((def) => (
+                        <option key={def.id} value={def.id}>
+                          {def.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div
+                    className={css({
+                      textAlign: "center",
+                      color: "gray.500",
+                      paddingTop: "4",
+                    })}
+                  >
+                    →
+                  </div>
+
+                  {/* To Class */}
+                  <div>
+                    <label
+                      className={css({
+                        fontSize: "xs",
+                        fontWeight: "bold",
+                        color: "gray.700",
+                        display: "block",
+                        marginBottom: "1",
+                      })}
+                    >
+                      To Class (Action)
+                    </label>
+                    <select
+                      className={css({
+                        width: "100%",
+                        padding: "2",
+                        borderRadius: "md",
+                        border: "1px solid token(colors.gray.300)",
+                        fontSize: "sm",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        backgroundColor: "white",
+                        color: "gray.900",
+                      })}
+                      style={{
+                        color: categoryMap[activeCategory]?.color,
+                      }}
+                      value={activeCategory}
+                      onChange={(e) =>
+                        setActiveCategory(Number(e.target.value))
+                      }
+                    >
+                      {categories.map((def) => (
+                        <option key={def.id} value={def.id}>
+                          {def.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* New Class Button */}
+                <div className={css({ marginTop: "2", textAlign: "right" })}>
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    className={css({
+                      fontSize: "xs",
+                      color: "blue.600",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      "&:hover": { textDecoration: "underline" },
+                    })}
+                  >
+                    + New Class
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Filter Conditions & Presets */}
+              <div className={css({ marginBottom: "4" })}>
+                <div
+                  className={css({
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "2",
+                  })}
+                >
+                  <label
+                    className={css({
+                      fontSize: "xs",
+                      fontWeight: "bold",
+                      color: "gray.700",
+                    })}
+                  >
+                    Condition (Filter)
+                  </label>
+
+                  {/* Preset Controls */}
+                  <div className={css({ display: "flex", gap: "2" })}>
+                    <select
+                      className={css({
+                        padding: "1px 4px",
+                        fontSize: "xs",
+                        borderRadius: "sm",
+                        border: "1px solid token(colors.gray.300)",
+                        maxWidth: "140px",
+                        backgroundColor: "white",
+                        color: "gray.900",
+                      })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          setSelectedPresetId(val);
+                          handleLoadPreset(val);
+                        } else {
+                          setSelectedPresetId("");
+                        }
+                      }}
+                      value={selectedPresetId}
+                    >
+                      <option value="">Load Preset...</option>
+                      {presets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={handleDeletePreset}
+                      disabled={!selectedPresetId}
+                      className={css({
+                        fontSize: "xs",
+                        color: "red.600",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        opacity: selectedPresetId ? 1 : 0.3,
+                        pointerEvents: selectedPresetId ? "auto" : "none",
+                        "&:hover": { textDecoration: "underline" },
+                      })}
+                    >
+                      Del
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSavePreset}
+                      className={css({
+                        fontSize: "xs",
+                        color: "blue.600",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        "&:hover": { textDecoration: "underline" },
+                      })}
+                    >
+                      Save New
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className={css({
+                    border: "1px solid token(colors.gray.200)",
+                    borderRadius: "md",
+                    padding: "2",
+                    backgroundColor: "gray.50",
+                  })}
+                >
+                  <ControlPanel
+                    stats={stats}
+                    rootGroup={filterConfig.root}
+                    maxDepth={filterConfig.maxDepth}
+                    onUpdateRoot={handleUpdateRoot}
+                  />
+                </div>
+              </div>
+
+              {/* 3. Add Rule Button */}
+              <button
+                type="button"
+                onClick={handleAddRule}
+                className={css({
+                  width: "100%",
+                  padding: "3",
+                  backgroundColor: "white",
+                  color: "blue.600",
+                  border: "1px solid token(colors.blue.600)",
+                  borderRadius: "md",
+                  fontSize: "sm",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  marginBottom: "4",
+                  "&:hover": { backgroundColor: "blue.50" },
+                })}
+              >
+                + Add to Pipeline
+              </button>
+
+              {/* Pipeline List */}
+              <div
+                className={css({
+                  borderTop: "1px solid token(colors.gray.200)",
+                  paddingTop: "4",
+                })}
+              >
+                <div
+                  className={css({
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "2",
+                  })}
+                >
+                  <h4
+                    className={css({
+                      fontSize: "sm",
+                      fontWeight: "bold",
+                      color: "gray.800",
+                    })}
+                  >
+                    Execution Pipeline
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={handleRunPipeline}
+                    disabled={rules.length === 0}
+                    className={css({
+                      padding: "4px 8px",
+                      backgroundColor: "blue.600",
+                      color: "white",
+                      borderRadius: "md",
+                      fontSize: "xs",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      opacity: rules.length === 0 ? 0.5 : 1,
+                      "&:hover": { backgroundColor: "blue.700" },
+                    })}
+                  >
+                    Run All Rules
+                  </button>
+                </div>
+
+                {rules.length === 0 ? (
+                  <div
+                    className={css({
+                      fontSize: "xs",
+                      color: "gray.500",
+                      textAlign: "center",
+                      padding: "4",
+                    })}
+                  >
+                    No rules defined.
+                  </div>
+                ) : (
+                  <ul
+                    className={css({
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "2",
+                    })}
+                  >
+                    {rules.map((rule, index) => (
+                      <li
+                        key={rule.id}
+                        className={css({
+                          padding: "2",
+                          backgroundColor: "gray.50",
+                          borderRadius: "md",
+                          border: "1px solid token(colors.gray.200)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "2",
+                        })}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled}
+                          onChange={() => handleToggleRule(rule.id)}
+                          className={css({ cursor: "pointer" })}
+                        />
+                        <div className={css({ flex: 1, minWidth: 0 })}>
+                          <div
+                            className={css({
+                              fontSize: "xs",
+                              fontWeight: "bold",
+                              color: "gray.800",
+                            })}
+                          >
+                            {rule.name}
+                          </div>
+                          <div
+                            className={css({
+                              fontSize: "xs",
+                              color: "gray.500",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            })}
+                          >
+                            {rule.fromClass === "any"
+                              ? "Any"
+                              : categoryMap[Number(rule.fromClass)]?.name}{" "}
+                            → {categoryMap[rule.toClass]?.name}
+                          </div>
+                        </div>
+                        <div
+                          className={css({
+                            display: "flex",
+                            flexDirection: "column",
+                          })}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleMoveRule(index, -1)}
+                            disabled={index === 0}
+                            className={css({
+                              fontSize: "10px",
+                              color: "gray.600",
+                              cursor: "pointer",
+                              "&:hover": { color: "blue.600" },
+                              "&:disabled": { opacity: 0.3 },
+                            })}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveRule(index, 1)}
+                            disabled={index === rules.length - 1}
+                            className={css({
+                              fontSize: "10px",
+                              color: "gray.600",
+                              cursor: "pointer",
+                              "&:hover": { color: "blue.600" },
+                              "&:disabled": { opacity: 0.3 },
+                            })}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRule(rule.id)}
+                          className={css({
+                            color: "red.500",
+                            fontSize: "sm",
+                            cursor: "pointer",
+                            padding: "2px",
+                            "&:hover": { backgroundColor: "red.50" },
+                          })}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* === DRAW MODE: MANUAL TOOLS === */}
           {editMode === "draw" && (
             <div
               className={css({
                 padding: "4",
                 backgroundColor: "white",
-                color: "gray.900", // 文字色を明示
                 borderRadius: "xl",
                 border: "1px solid token(colors.gray.200)",
                 boxShadow: "sm",
@@ -373,12 +1033,186 @@ export function AnnotationPageClient({
               <h3
                 className={css({
                   fontWeight: "bold",
-                  marginBottom: "2",
+                  marginBottom: "4",
                   color: "gray.900",
                 })}
               >
-                Added Regions
+                Draw Tools
               </h3>
+
+              {/* Active Category Palette */}
+              <div className={css({ marginBottom: "4" })}>
+                <div
+                  className={css({
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  })}
+                >
+                  <h4 className={css({ fontSize: "xs", color: "gray.700" })}>
+                    Active Category
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    className={css({
+                      fontSize: "xs",
+                      color: "blue.600",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      "&:hover": { textDecoration: "underline" },
+                    })}
+                  >
+                    + New
+                  </button>
+                </div>
+                <div
+                  className={css({
+                    marginTop: "2",
+                    display: "grid",
+                    gap: "2",
+                  })}
+                >
+                  {categories.map((def) => {
+                    const isActive = activeCategory === def.id;
+                    return (
+                      <div
+                        key={def.id}
+                        className={css({
+                          position: "relative",
+                        })}
+                      >
+                        <label
+                          className={css({
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "2",
+                            padding: "2",
+                            borderRadius: "md",
+                            cursor: "pointer",
+                            backgroundColor: isActive
+                              ? "gray.100"
+                              : "transparent",
+                            border: isActive
+                              ? "1px solid token(colors.gray.300)"
+                              : "1px solid transparent",
+                          })}
+                        >
+                          <input
+                            type="radio"
+                            name="drawCategory"
+                            value={def.id}
+                            checked={isActive}
+                            onChange={() => setActiveCategory(def.id)}
+                            className={css({ cursor: "pointer" })}
+                          />
+                          <button
+                            type="button"
+                            className={css({
+                              width: "16px",
+                              height: "16px",
+                              borderRadius: "full",
+                              cursor: "pointer",
+                              border: "1px solid rgba(0,0,0,0.1)",
+                              padding: 0,
+                              appearance: "none",
+                            })}
+                            style={{ backgroundColor: def.color }}
+                            onClick={(e) => {
+                              e.preventDefault(); // Stop radio click
+                              setEditingColorId(
+                                editingColorId === def.id ? null : def.id,
+                              );
+                            }}
+                          />
+                          <span
+                            className={css({
+                              fontSize: "sm",
+                              fontWeight: isActive ? "bold" : "normal",
+                              color: "gray.900",
+                              flex: 1,
+                              marginLeft: "4px",
+                            })}
+                          >
+                            {def.name}
+                          </span>
+
+                          {!def.isSystem && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteCategory(e, def.id)}
+                              className={css({
+                                fontSize: "10px",
+                                color: "gray.400",
+                                cursor: "pointer",
+                                padding: "2px",
+                                marginLeft: "4px",
+                                backgroundColor: "transparent",
+                                border: "none",
+                                "&:hover": { color: "red.500" },
+                              })}
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </label>
+
+                        {/* Color Picker Popover */}
+                        {editingColorId === def.id && (
+                          <div
+                            className={css({
+                              position: "absolute",
+                              top: "100%",
+                              left: 0,
+                              zIndex: 10,
+                              backgroundColor: "white",
+                              border: "1px solid token(colors.gray.300)",
+                              borderRadius: "md",
+                              padding: "4px",
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "4px",
+                              width: "140px",
+                              boxShadow: "lg",
+                            })}
+                          >
+                            {PRESET_COLORS.map((c) => (
+                              <button
+                                type="button"
+                                key={c}
+                                className={css({
+                                  width: "20px",
+                                  height: "20px",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  padding: 0,
+                                  border: "none",
+                                  "&:hover": { transform: "scale(1.1)" },
+                                })}
+                                style={{ backgroundColor: c }}
+                                onClick={() =>
+                                  handleUpdateCategoryColor(def.id, c)
+                                }
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Added List */}
+              <h4
+                className={css({
+                  fontSize: "xs",
+                  color: "gray.700",
+                  marginBottom: "2",
+                })}
+              >
+                Added Regions
+              </h4>
               {addedRegions.length === 0 ? (
                 <div className={css({ color: "gray.500", fontSize: "sm" })}>
                   No additions.
@@ -399,37 +1233,26 @@ export function AnnotationPageClient({
                       className={css({
                         display: "flex",
                         justifyContent: "space-between",
-                        alignItems: "center",
                         padding: "2",
-                        borderBottom: "1px solid #eee",
                         fontSize: "xs",
-                        color: "gray.800", // アイテム文字色
-                        borderRadius: "md",
-                        transition: "background-color 0.2s",
-                        "&:hover": { backgroundColor: "gray.100" },
+                        color: "gray.800",
+                        borderBottom: "1px solid #eee",
                       })}
-                      onMouseEnter={() => setHoveredId(region.id)}
-                      onMouseLeave={() => setHoveredId(null)}
                     >
                       <span>
-                        #{index + 1} (ID: {region.id})
+                        #{index + 1} (
+                        {categoryMap[region.categoryId ?? 1]?.name})
                       </span>
                       <button
                         type="button"
                         onClick={() => handleRemoveAddedRegion(region.id)}
                         className={css({
                           color: "red.600",
-                          fontWeight: "semibold",
                           cursor: "pointer",
-                          padding: "2px 6px",
-                          borderRadius: "sm",
-                          "&:hover": {
-                            backgroundColor: "red.50",
-                            textDecoration: "none",
-                          },
+                          fontWeight: "bold",
                         })}
                       >
-                        Delete
+                        Del
                       </button>
                     </li>
                   ))}
@@ -438,12 +1261,51 @@ export function AnnotationPageClient({
             </div>
           )}
 
-          <ControlPanel
-            stats={stats}
-            rootGroup={filterConfig.root}
-            maxDepth={filterConfig.maxDepth}
-            onUpdateRoot={handleUpdateRoot}
-          />
+          {/* Global Save */}
+          <div
+            className={css({
+              padding: "4",
+              backgroundColor: "white",
+              borderRadius: "xl",
+              border: "1px solid token(colors.gray.200)",
+              boxShadow: "sm",
+            })}
+          >
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className={css({
+                width: "100%",
+                padding: "3",
+                backgroundColor: isSaving ? "gray.400" : "green.600",
+                color: "white",
+                borderRadius: "md",
+                fontWeight: "semibold",
+                cursor: isSaving ? "not-allowed" : "pointer",
+                transition: "background-color 0.2s",
+                "&:hover": {
+                  backgroundColor: isSaving ? "gray.400" : "green.700",
+                },
+              })}
+            >
+              {isSaving ? "Saving..." : "Save All Changes"}
+            </button>
+            {saveMessage && (
+              <div
+                className={css({
+                  marginTop: "3",
+                  fontSize: "sm",
+                  color:
+                    saveMessage.type === "success" ? "green.600" : "red.600",
+                  fontWeight: "medium",
+                  textAlign: "center",
+                })}
+              >
+                {saveMessage.text}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { css } from "../../../../styled-system/css";
-import type { AnnotationRegion } from "../_types";
+import type { AnnotationRegion, CategoryDef } from "../_types";
 
 interface CanvasLayerProps {
   imageSrc: string; // 表示する画像のURL（Data URLでも可）
@@ -12,7 +12,9 @@ interface CanvasLayerProps {
   height: number; // Canvasの論理高さ
   regions: AnnotationRegion[]; // 描画するアノテーション領域
   filteredIds: Set<number>;
-  removedIds: Set<number>;
+  classifications: Map<number, number>; // クラス分類 (ID -> CategoryID)
+  activeCategory: number; // プレビュー用のターゲットクラス
+  categoryMap: Record<number, CategoryDef>; // カテゴリ定義マップ (追加)
   hoveredId: number | null;
   editMode?: "select" | "draw"; // 編集モード
   onHover: (id: number | null) => void;
@@ -27,7 +29,9 @@ export function CanvasLayer({
   height,
   regions,
   filteredIds,
-  removedIds,
+  classifications,
+  activeCategory,
+  categoryMap,
   hoveredId,
   editMode = "select",
   onHover,
@@ -55,9 +59,9 @@ export function CanvasLayer({
   );
 
   // 描画モード用状態
-  const [drawingPoints, setDrawingPoints] = useState<{ x: number; y: number }[]>(
-    [],
-  );
+  const [drawingPoints, setDrawingPoints] = useState<
+    { x: number; y: number }[]
+  >([]);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -103,7 +107,12 @@ export function CanvasLayer({
 
       // 4. アノテーション描画
       regions.forEach((region) => {
-        const isRemoved = removedIds.has(region.id);
+        // クラスIDの決定
+        const categoryId =
+          classifications.get(region.id) ?? region.categoryId ?? 1;
+        const categoryDef = categoryMap[categoryId] || categoryMap[1];
+
+        const isRemoved = categoryId === 999;
         const isFiltered = filteredIds.has(region.id);
         const isHovered = region.id === hoveredId;
 
@@ -113,27 +122,28 @@ export function CanvasLayer({
 
         ctx.setLineDash([]);
 
+        if (!categoryDef) return; // 安全策
+
         if (isRemoved) {
+          // 削除済み (999)
           fillStyle = isHovered
-            ? "rgba(239, 68, 68, 0.6)"
-            : "rgba(239, 68, 68, 0.35)";
-          strokeStyle = "#dc2626";
+            ? categoryDef.fill.replace(/[\d.]+\)$/, "0.6)")
+            : categoryDef.fill;
+          strokeStyle = categoryDef.color;
         } else if (isFiltered) {
-          fillStyle = "rgba(100, 116, 139, 0.05)";
-          strokeStyle = "rgba(148, 163, 184, 0.6)";
+          // フィルタ対象: プレビュー表示 (activeCategory の色)
+          const previewDef = categoryMap[activeCategory] || categoryMap[1];
+          // 薄く表示して、枠線はターゲット色にする
+          fillStyle = previewDef.fill.replace(/[\d.]+\)$/, "0.4)");
+          strokeStyle = previewDef.color;
+          // 点線でプレビュー感を出す
           ctx.setLineDash([2 / transform.scale, 4 / transform.scale]);
-        } else if (region.isManualAdded) {
-          // 手動追加: 緑色 (Emerald)
-          fillStyle = isHovered
-            ? "rgba(16, 185, 129, 0.6)"
-            : "rgba(16, 185, 129, 0.35)";
-          strokeStyle = "#059669";
         } else {
-          // 通常: 鮮やかなシアン/水色 (暗い背景でも明るい背景でも見やすい)
+          // 通常表示
           fillStyle = isHovered
-            ? "rgba(6, 182, 212, 0.5)"
-            : "rgba(6, 182, 212, 0.25)";
-          strokeStyle = isHovered ? "#0891b2" : "#06b6d4";
+            ? categoryDef.fill.replace(/[\d.]+\)$/, "0.5)")
+            : categoryDef.fill;
+          strokeStyle = categoryDef.color;
         }
 
         if (isHovered) {
@@ -174,9 +184,9 @@ export function CanvasLayer({
         ctx.setLineDash([]);
       }
 
-      // 6. 描画中のポリゴン表示 (Draw Mode)
+      // 6. 描画中のポリゴン表示
       if (editMode === "draw" && drawingPoints.length > 0) {
-        ctx.strokeStyle = "#22c55e"; // Green 500
+        ctx.strokeStyle = "#22c55e"; // Green
         ctx.lineWidth = 2 / transform.scale;
         ctx.setLineDash([]);
 
@@ -187,7 +197,6 @@ export function CanvasLayer({
         }
         ctx.stroke();
 
-        // 頂点マーカー
         ctx.fillStyle = "#22c55e";
         const r = 3 / transform.scale;
         drawingPoints.forEach((p) => {
@@ -196,7 +205,6 @@ export function CanvasLayer({
           ctx.fill();
         });
 
-        // ラバーバンド
         if (mousePos) {
           ctx.beginPath();
           ctx.moveTo(
@@ -204,7 +212,7 @@ export function CanvasLayer({
             drawingPoints[drawingPoints.length - 1].y,
           );
           ctx.lineTo(mousePos.x, mousePos.y);
-          ctx.strokeStyle = "rgba(34, 197, 94, 0.5)"; // 薄い緑
+          ctx.strokeStyle = "rgba(34, 197, 94, 0.5)";
           ctx.setLineDash([4 / transform.scale, 4 / transform.scale]);
           ctx.stroke();
           ctx.setLineDash([]);
@@ -226,7 +234,9 @@ export function CanvasLayer({
     imageSrc,
     regions,
     filteredIds,
-    removedIds,
+    classifications,
+    activeCategory,
+    categoryMap, // 追加
     hoveredId,
     width,
     height,
@@ -235,11 +245,11 @@ export function CanvasLayer({
     dragEnd,
     transform,
     editMode,
-    drawingPoints, // 追加
-    mousePos, // 追加
+    drawingPoints,
+    mousePos,
   ]);
 
-  // --- 座標変換ヘルパー ---
+  // ... (以降変更なし)
 
   const getRawCoordinates = (
     e:
@@ -263,8 +273,6 @@ export function CanvasLayer({
       y: (rawY - transform.y) / transform.scale,
     };
   };
-
-  // --- イベントハンドラ ---
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     const scaleBy = 1.1;
@@ -293,15 +301,12 @@ export function CanvasLayer({
       setDragEnd(world);
       setIsDragging(false);
     } else {
-      // Drawモード
       if (e.shiftKey) {
         setPanStart(raw);
         setIsPanning(true);
       } else if (e.button === 0) {
-        // 左クリック: 点追加
         setDrawingPoints((prev) => [...prev, world]);
       } else if (e.button === 2) {
-        // 右クリック: 完了
         finishDrawing();
       }
     }
@@ -355,19 +360,14 @@ export function CanvasLayer({
       return;
     }
 
-    // フリーハンド描画 (Drawモード & 左クリックドラッグ)
     if (editMode === "draw" && e.buttons === 1 && !isPanning) {
-      // 最後の点との距離をチェックして間引く
       const lastPoint = drawingPoints[drawingPoints.length - 1];
       if (lastPoint) {
-        // World座標での距離
         const dist = Math.hypot(world.x - lastPoint.x, world.y - lastPoint.y);
-        // 画面上のピクセル換算で閾値を超えたら追加
         if (dist * transform.scale > DRAG_THRESHOLD) {
           setDrawingPoints((prev) => [...prev, world]);
         }
       }
-      // マウス位置更新（ラバーバンド用だが、ドラッグ中は線がつながって見える）
       setMousePos(world);
       return;
     }
@@ -451,16 +451,15 @@ export function CanvasLayer({
     setPanStart(null);
   };
 
-  // カーソルスタイルの決定
   let cursorStyle = "default";
   if (isPanning) {
     cursorStyle = "grabbing";
   } else if (editMode === "draw") {
-    cursorStyle = "crosshair"; // 描画モード: 十字
+    cursorStyle = "crosshair";
   } else if (isDragging) {
-    cursorStyle = "crosshair"; // 範囲選択中: 十字
+    cursorStyle = "crosshair";
   } else if (hoveredId) {
-    cursorStyle = "pointer"; // ホバー中: 指
+    cursorStyle = "pointer";
   } else {
     cursorStyle = "default";
   }
@@ -491,7 +490,6 @@ export function CanvasLayer({
           if (dragStart)
             handleMouseUp({} as React.MouseEvent<HTMLCanvasElement>);
         }}
-        // 右クリックメニューを無効化（描画完了は onMouseDown で処理）
         onContextMenu={(e) => {
           e.preventDefault();
         }}
