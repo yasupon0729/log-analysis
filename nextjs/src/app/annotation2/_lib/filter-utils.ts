@@ -5,7 +5,8 @@ import type { AnnotationRegion, FilterConfig, FilterNode } from "../_types";
 export function evaluateFilter(
   node: FilterNode,
   region: AnnotationRegion,
-  ignoreManualFlag: boolean = false,
+  ignoreManualFlag = false,
+  forPipeline = false, // 新しい引数: パイプライン実行時にactionによる反転をスキップ
 ): boolean {
   // 手動追加された領域は常にフィルタを通過させる（表示する）
   // ただし、パイプライン実行時などはフラグで無効化する
@@ -26,7 +27,7 @@ export function evaluateFilter(
 
     // 子要素の評価
     const results = activeChildren.map((c) =>
-      evaluateFilter(c, region, ignoreManualFlag),
+      evaluateFilter(c, region, ignoreManualFlag, forPipeline), // forPipeline を再帰的に渡す
     );
 
     // 結合 (Logic)
@@ -39,7 +40,11 @@ export function evaluateFilter(
     }
 
     // Action適用
-    if (node.action === "remove") {
+    if (forPipeline) {
+      // パイプライン用途の場合、actionによる最終的な反転は行わない。
+      // 純粋に条件にマッチしたかどうかを返す。
+      return isMatch;
+    } else if (node.action === "remove") {
       // Removeモード: 条件に合致(True)したら、除外(False/Block)する
       // 条件に合致しない(False)なら、通過(True/Pass)する
       return !isMatch;

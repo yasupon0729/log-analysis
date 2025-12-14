@@ -279,30 +279,145 @@ export async function deleteFilterPreset(
 }
 
 export interface SavePipelineResult {
+
   success: boolean;
+
   message: string;
+
 }
 
+
+
 export async function savePipeline(
+
   rules: ClassificationRule[],
+
 ): Promise<SavePipelineResult> {
+
   try {
+
     const filePath = path.join(INPUT_DIR, "rules.json");
+
     const data = {
+
       version: 1,
+
       updatedAt: new Date().toISOString(),
+
       rules,
+
     };
+
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+
     revalidatePath("/annotation2");
+
     return { success: true, message: "ルール設定を保存しました。" };
+
   } catch (error) {
+
     console.error("Failed to save rules.json:", error);
+
     return {
+
       success: false,
+
       message: `ルール保存に失敗: ${
+
         error instanceof Error ? error.message : String(error)
+
       }`,
+
     };
+
   }
+
+}
+
+
+
+export interface SaveManualResult {
+
+  success: boolean;
+
+  message: string;
+
+}
+
+
+
+export async function saveManualClassifications(
+
+  manualClassifications: Record<number, number>,
+
+): Promise<SaveManualResult> {
+
+  try {
+
+    const filePath = path.join(INPUT_DIR, "manual_classifications.json");
+
+
+
+    const data = {
+
+      version: 1,
+
+      updatedAt: new Date().toISOString(),
+
+      overrides: manualClassifications,
+
+    };
+
+
+
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+
+
+
+    revalidatePath("/annotation2");
+
+    return { success: true, message: "手動修正を保存しました。" };
+
+  } catch (error) {
+
+    console.error("Failed to save manual_classifications.json:", error);
+
+    return {
+
+      success: false,
+
+      message: `手動修正の保存に失敗: ${
+
+        error instanceof Error ? error.message : String(error)
+
+      }`,
+
+    };
+
+  }
+
+}
+
+
+
+export async function loadManualClassifications(): Promise<Record<number, number>> {
+
+  try {
+
+    const filePath = path.join(INPUT_DIR, "manual_classifications.json");
+
+    const content = await fs.readFile(filePath, "utf-8");
+
+    const data = JSON.parse(content);
+
+    return data.overrides || {};
+
+  } catch (error) {
+
+    // File not found or invalid JSON is fine, return empty
+
+    return {};
+
+  }
+
 }

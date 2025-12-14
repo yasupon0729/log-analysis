@@ -13,6 +13,7 @@ export default async function AnnotationPageV2() {
     filterConfig,
     addedRegions,
     classifications,
+    manualClassifications, // Added
     presets,
     categories,
     rules,
@@ -27,6 +28,7 @@ export default async function AnnotationPageV2() {
       initialFilterConfig={filterConfig}
       initialAddedRegions={addedRegions}
       initialClassifications={classifications}
+      initialManualClassifications={manualClassifications} // Pass prop
       initialPresets={presets}
       initialCategories={categories}
       initialRules={rules}

@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
 import { css } from "../../../../styled-system/css";
-import { createDefaultConfig, evaluateFilter } from "../_lib/filter-utils";
+import {
+  createDefaultConfig,
+  evaluateFilter,
+  getFilterExpression,
+} from "../_lib/filter-utils";
 import {
   type AnnotationRegion,
   type CategoryDef,
@@ -23,6 +33,7 @@ import {
   saveClassifications,
   saveFilterConfig,
   saveFilterPreset,
+  saveManualClassifications,
   savePipeline,
 } from "../actions";
 import { CanvasLayer } from "./CanvasLayer";
@@ -34,6 +45,7 @@ interface AnnotationPageClientProps {
   imageUrl: string;
   initialRemovedIds?: number[]; // Legacy
   initialClassifications?: Record<number, number>;
+  initialManualClassifications?: Record<number, number>; // New: Manual Overrides
   initialFilterConfig?: FilterConfig | null;
   initialAddedRegions?: AnnotationRegion[];
   initialPresets?: FilterPreset[];
@@ -47,6 +59,7 @@ export function AnnotationPageClient({
   imageUrl,
   initialRemovedIds = [],
   initialClassifications = {},
+  initialManualClassifications = {},
   initialFilterConfig = null,
   initialAddedRegions = [],
   initialPresets = [],
@@ -58,7 +71,9 @@ export function AnnotationPageClient({
     useState<CategoryDef[]>(initialCategories);
   const categoryMap = useMemo(() => getCategoryMap(categories), [categories]);
 
-  const [classifications, setClassifications] = useState<Map<number, number>>(
+  // 1. Pipeline Results (Calculated from rules)
+  // Initially loaded from classification.json (legacy/merged data)
+  const [pipelineResults, setPipelineResults] = useState<Map<number, number>>(
     () => {
       const map = new Map<number, number>();
       initialRemovedIds.forEach((id) => {
@@ -71,9 +86,32 @@ export function AnnotationPageClient({
     },
   );
 
+  // 2. Manual Overrides (Hand-picked by user) - Highest Priority
+  // Persisted in manual_classifications.json
+  const [manualOverrides, setManualOverrides] = useState<Map<number, number>>(
+    () => {
+      const map = new Map<number, number>();
+      Object.entries(initialManualClassifications).forEach(([id, cat]) => {
+        map.set(Number(id), Number(cat));
+      });
+      return map;
+    },
+  );
+
+  // 3. Merged Classifications (For Display)
+  // Logic: Manual Overrides > Pipeline Results > Default
+  const mergedClassifications = useMemo(() => {
+    const merged = new Map(pipelineResults);
+    manualOverrides.forEach((cat, id) => {
+      merged.set(id, cat);
+    });
+    return merged;
+  }, [pipelineResults, manualOverrides]);
+
   const [presets, setPresets] = useState<FilterPreset[]>(initialPresets);
   const [rules, setRules] = useState<ClassificationRule[]>(initialRules);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
   const [fromClassId, setFromClassId] = useState<number | "any">(1);
   const [activeCategory, setActiveCategory] = useState<number>(999); // Default: Remove
@@ -103,6 +141,11 @@ export function AnnotationPageClient({
     }
   }, [initialFilterConfig]);
 
+  const editingRule = useMemo(
+    () => (editingRuleId ? rules.find((r) => r.id === editingRuleId) ?? null : null),
+    [editingRuleId, rules],
+  );
+
   const allRegions = useMemo(() => {
     return [...initialRegions, ...addedRegions];
   }, [initialRegions, addedRegions]);
@@ -112,8 +155,9 @@ export function AnnotationPageClient({
     if (!filterConfig.root.enabled) return ids;
 
     for (const region of allRegions) {
+      // Use merged classifications for visibility filtering
       const currentCat =
-        classifications.get(region.id) ?? region.categoryId ?? 1;
+        mergedClassifications.get(region.id) ?? region.categoryId ?? 1;
       if (fromClassId !== "any" && currentCat !== fromClassId) {
         continue;
       }
@@ -122,46 +166,145 @@ export function AnnotationPageClient({
       }
     }
     return ids;
-  }, [allRegions, filterConfig, classifications, fromClassId]);
+  }, [allRegions, filterConfig, mergedClassifications, fromClassId]);
+
+  // --- Manual Edit Handlers (Update Manual Overrides) ---
 
   const handleRegionClick = (id: number) => {
     const target = allRegions.find((r) => r.id === id);
     if (target?.isManualAdded) return;
 
-    setClassifications((prev) => {
+    setManualOverrides((prev) => {
       const next = new Map(prev);
-      const currentCat = next.get(id);
+      const currentCat = mergedClassifications.get(id); // Check current visual state
+
       if (currentCat === activeCategory) {
+        // Toggle OFF: If currently active category, remove explicit override.
+        // This falls back to Pipeline result.
+        // If we want to "Reset to Default", we might need to explicitly set to 1?
+        // But "Toggle" usually means "Remove my manual choice".
         next.delete(id);
       } else {
+        // Apply Override
         next.set(id, activeCategory);
       }
+
+      // Real-time Save for Manual Overrides
+      startTransition(async () => {
+        await saveManualClassifications(Object.fromEntries(next));
+      });
+
       return next;
     });
   };
 
   const handleRangeSelect = (ids: number[]) => {
-    setClassifications((prev) => {
+    setManualOverrides((prev) => {
       const next = new Map(prev);
       ids.forEach((id) => {
         const target = allRegions.find((r) => r.id === id);
         if (target?.isManualAdded) return;
         next.set(id, activeCategory);
       });
+
+      // Real-time Save
+      startTransition(async () => {
+        await saveManualClassifications(Object.fromEntries(next));
+      });
+
       return next;
     });
   };
 
-  // --- Pipeline Management ---
+  // --- Pipeline Management (Update Pipeline Results) ---
+
+  const recalculateClassifications = useCallback(
+    (currentRules: ClassificationRule[]) => {
+      // Start fresh to allow "real-time" toggling
+      const next = new Map<number, number>();
+
+      // Apply all enabled rules sequentially
+      currentRules
+        .filter((r) => r.enabled)
+        .forEach((rule) => {
+          // Find matching regions
+          const targets: number[] = [];
+          for (const region of allRegions) {
+            // Check current class (affected by previous rules in this loop)
+            const currentCat = next.get(region.id) ?? region.categoryId ?? 1;
+
+            if (rule.fromClass !== "any" && currentCat !== rule.fromClass)
+              continue;
+
+            // Evaluate with Keep/Remove semantics to align with UI preview
+            // "Target" = items that would be filtered out (i.e., !passes)
+            const passes = evaluateFilter(rule.filter, region, true);
+            if (!passes) {
+              targets.push(region.id);
+            }
+          }
+
+          // Apply changes
+          targets.forEach((id) => {
+            next.set(id, rule.toClass);
+          });
+        });
+
+      setPipelineResults(next);
+      // NOTE: Manual Overrides are NOT touched here, so they persist!
+    },
+    [allRegions],
+  );
 
   const updateRules = (newRules: ClassificationRule[]) => {
     setRules(newRules);
-    startTransition(async () => {
-      await savePipeline(newRules);
-    });
+    recalculateClassifications(newRules);
+  };
+
+  const handleEditRule = (ruleId: string) => {
+    const target = rules.find((r) => r.id === ruleId);
+    if (!target) return;
+
+    setEditingRuleId(ruleId);
+    setFromClassId(target.fromClass);
+    setActiveCategory(target.toClass);
+
+    const copied = JSON.parse(JSON.stringify(target.filter)) as FilterGroup;
+    setFilterConfig((prev) => ({
+      ...prev,
+      root: { ...copied, enabled: true },
+    }));
+  };
+
+  const handleCancelEditRule = () => {
+    setEditingRuleId(null);
   };
 
   const handleAddRule = () => {
+    const filterCopy = JSON.parse(JSON.stringify(filterConfig.root)) as FilterGroup;
+    filterCopy.enabled = true;
+
+    if (editingRuleId) {
+      const updatedRules = rules.map((r) =>
+        r.id === editingRuleId
+          ? {
+              ...r,
+              fromClass: fromClassId,
+              toClass: activeCategory,
+              filter: filterCopy,
+            }
+          : r,
+      );
+      updateRules(updatedRules);
+      setEditingRuleId(null);
+      setSaveMessage({
+        type: "success",
+        text: "Rule updated.",
+      });
+      setTimeout(() => setSaveMessage(null), 2000);
+      return;
+    }
+
     const name = window.prompt("Rule Name:", `Rule ${rules.length + 1}`);
     if (!name) return;
 
@@ -171,7 +314,7 @@ export function AnnotationPageClient({
       enabled: true,
       fromClass: fromClassId,
       toClass: activeCategory,
-      filter: JSON.parse(JSON.stringify(filterConfig.root)), // Deep copy
+      filter: filterCopy, // Deep copy
     };
 
     updateRules([...rules, newRule]);
@@ -179,6 +322,9 @@ export function AnnotationPageClient({
 
   const handleDeleteRule = (ruleId: string) => {
     if (!confirm("Delete this rule?")) return;
+    if (editingRuleId === ruleId) {
+      setEditingRuleId(null);
+    }
     updateRules(rules.filter((r) => r.id !== ruleId));
   };
 
@@ -198,37 +344,7 @@ export function AnnotationPageClient({
   };
 
   const handleRunPipeline = () => {
-    if (!confirm(`Run ${rules.filter((r) => r.enabled).length} rules?`)) return;
-
-    setClassifications((prev) => {
-      const next = new Map(prev);
-
-      rules
-        .filter((r) => r.enabled)
-        .forEach((rule) => {
-          // Find matching regions
-          const targets: number[] = [];
-          for (const region of allRegions) {
-            // Current class check
-            const currentCat = next.get(region.id) ?? region.categoryId ?? 1;
-            if (rule.fromClass !== "any" && currentCat !== rule.fromClass)
-              continue;
-
-            // Filter check (evaluateFilter returns false if "Removed" by filter)
-            if (!evaluateFilter(rule.filter, region, true)) {
-              targets.push(region.id);
-            }
-          }
-
-          // Apply changes
-          targets.forEach((id) => {
-            next.set(id, rule.toClass);
-          });
-        });
-
-      return next;
-    });
-
+    recalculateClassifications(rules);
     setSaveMessage({
       type: "success",
       text: "Pipeline executed successfully.",
@@ -236,7 +352,7 @@ export function AnnotationPageClient({
     setTimeout(() => setSaveMessage(null), 3000);
   };
 
-  // --- Manual Actions ---
+  // --- Manual Actions (Add/Remove Regions) ---
 
   const handleAddRegion = (points: { x: number; y: number }[]) => {
     const id = -1 * Date.now();
@@ -266,7 +382,8 @@ export function AnnotationPageClient({
   const handleSave = () => {
     setSaveMessage(null);
     startTransition(async () => {
-      const classObj = Object.fromEntries(classifications);
+      // Save merged results as the "final" classification for export
+      const classObj = Object.fromEntries(mergedClassifications);
       const classResult = await saveClassifications(classObj);
 
       const configToSave: FilterConfig = {
@@ -277,7 +394,20 @@ export function AnnotationPageClient({
 
       const addResult = await saveAddedAnnotations(addedRegions);
 
-      if (classResult.success && filterResult.success && addResult.success) {
+      const pipelineResult = await savePipeline(rules);
+
+      // Manual overrides are already saved in real-time, but let's save again to be sure
+      const manualResult = await saveManualClassifications(
+        Object.fromEntries(manualOverrides),
+      );
+
+      if (
+        classResult.success &&
+        filterResult.success &&
+        addResult.success &&
+        pipelineResult.success &&
+        manualResult.success
+      ) {
         setSaveMessage({
           type: "success",
           text: "All changes saved successfully.",
@@ -288,6 +418,8 @@ export function AnnotationPageClient({
         if (!classResult.success) errorMsgs.push(classResult.message);
         if (!filterResult.success) errorMsgs.push(filterResult.message);
         if (!addResult.success) errorMsgs.push(addResult.message);
+        if (!pipelineResult.success) errorMsgs.push(pipelineResult.message);
+        if (!manualResult.success) errorMsgs.push(manualResult.message);
         setSaveMessage({
           type: "error",
           text: `Save failed: ${errorMsgs.join(", ")}`,
@@ -296,16 +428,25 @@ export function AnnotationPageClient({
     });
   };
 
-  const removedCount = Array.from(classifications.values()).filter(
+  const removedCount = Array.from(mergedClassifications.values()).filter(
     (c) => c === 999,
   ).length;
 
   const handleBulkClassify = (targetClassId: number) => {
-    setClassifications((prev) => {
+    // Bulk classify applies to MANUAL OVERRIDES for safety?
+    // Or just pipeline?
+    // "Bulk Action" usually implies manual intervention on filtered set.
+    // So let's update Manual Overrides.
+    setManualOverrides((prev) => {
       const next = new Map(prev);
       filteredIds.forEach((id) => {
         next.set(id, targetClassId);
       });
+
+      startTransition(async () => {
+        await saveManualClassifications(Object.fromEntries(next));
+      });
+
       return next;
     });
 
@@ -316,7 +457,7 @@ export function AnnotationPageClient({
 
     setSaveMessage({
       type: "success",
-      text: `Applied Class ${targetClassId} to ${filteredIds.size} regions and reset filter.`,
+      text: `Applied Class ${targetClassId} to ${filteredIds.size} regions (Manual Override).`,
     });
     setTimeout(() => setSaveMessage(null), 3000);
   };
@@ -381,9 +522,9 @@ export function AnnotationPageClient({
     }
 
     // 2. Usage check
-    const usedInClassifications = Array.from(classifications.values()).includes(
-      id,
-    );
+    const usedInClassifications = Array.from(
+      mergedClassifications.values(),
+    ).includes(id);
     const usedInAdditions = addedRegions.some((r) => r.categoryId === id);
     const usedInInitial = initialRegions.some((r) => r.categoryId === id);
 
@@ -508,7 +649,7 @@ export function AnnotationPageClient({
             height={900}
             regions={allRegions}
             filteredIds={filteredIds}
-            classifications={classifications}
+            classifications={mergedClassifications}
             activeCategory={activeCategory}
             categoryMap={categoryMap}
             hoveredId={hoveredId}
@@ -842,19 +983,50 @@ export function AnnotationPageClient({
                 className={css({
                   width: "100%",
                   padding: "3",
-                  backgroundColor: "white",
-                  color: "blue.600",
+                  backgroundColor: editingRuleId ? "blue.700" : "white",
+                  color: editingRuleId ? "white" : "blue.600",
                   border: "1px solid token(colors.blue.600)",
                   borderRadius: "md",
                   fontSize: "sm",
                   fontWeight: "bold",
                   cursor: "pointer",
                   marginBottom: "4",
-                  "&:hover": { backgroundColor: "blue.50" },
+                  "&:hover": {
+                    backgroundColor: editingRuleId ? "blue.800" : "blue.50",
+                  },
                 })}
               >
-                + Add to Pipeline
+                {editingRuleId ? "Update Rule" : "+ Add to Pipeline"}
               </button>
+              {editingRule && (
+                <div
+                  className={css({
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "xs",
+                    color: "gray.600",
+                    marginTop: "-2",
+                    marginBottom: "4",
+                  })}
+                >
+                  <span>
+                    Editing: <strong>{editingRule.name}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCancelEditRule}
+                    className={css({
+                      color: "red.500",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      "&:hover": { textDecoration: "underline" },
+                    })}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
 
               {/* Pipeline List */}
               <div
@@ -928,7 +1100,7 @@ export function AnnotationPageClient({
                           borderRadius: "md",
                           border: "1px solid token(colors.gray.200)",
                           display: "flex",
-                          alignItems: "center",
+                          alignItems: "flex-start",
                           gap: "2",
                         })}
                       >
@@ -962,55 +1134,90 @@ export function AnnotationPageClient({
                               : categoryMap[Number(rule.fromClass)]?.name}{" "}
                             → {categoryMap[rule.toClass]?.name}
                           </div>
+                          <div
+                            className={css({
+                              fontSize: "xs",
+                              color: "gray.500",
+                              lineHeight: "1.3",
+                              marginTop: "1",
+                            })}
+                          >
+                            {getFilterExpression(rule.filter) ||
+                              "No active filters"}
+                          </div>
                         </div>
                         <div
                           className={css({
                             display: "flex",
-                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: "1.5",
                           })}
                         >
                           <button
                             type="button"
-                            onClick={() => handleMoveRule(index, -1)}
-                            disabled={index === 0}
+                            onClick={() => handleEditRule(rule.id)}
                             className={css({
-                              fontSize: "10px",
-                              color: "gray.600",
+                              fontSize: "xs",
+                              color: "blue.600",
                               cursor: "pointer",
-                              "&:hover": { color: "blue.600" },
-                              "&:disabled": { opacity: 0.3 },
+                              fontWeight: "bold",
+                              padding: "2px 4px",
+                              borderRadius: "sm",
+                              "&:hover": { backgroundColor: "blue.50" },
                             })}
                           >
-                            ▲
+                            Edit
                           </button>
+                          <div
+                            className={css({
+                              display: "flex",
+                              flexDirection: "column",
+                            })}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleMoveRule(index, -1)}
+                              disabled={index === 0}
+                              className={css({
+                                fontSize: "10px",
+                                color: "gray.600",
+                                cursor: "pointer",
+                                "&:hover": { color: "blue.600" },
+                                "&:disabled": { opacity: 0.3 },
+                              })}
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveRule(index, 1)}
+                              disabled={index === rules.length - 1}
+                              className={css({
+                                fontSize: "10px",
+                                color: "gray.600",
+                                cursor: "pointer",
+                                "&:hover": { color: "blue.600" },
+                                "&:disabled": { opacity: 0.3 },
+                              })}
+                            >
+                              ▼
+                            </button>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => handleMoveRule(index, 1)}
-                            disabled={index === rules.length - 1}
+                            onClick={() => handleDeleteRule(rule.id)}
                             className={css({
-                              fontSize: "10px",
-                              color: "gray.600",
+                              color: "red.500",
+                              fontSize: "sm",
                               cursor: "pointer",
-                              "&:hover": { color: "blue.600" },
-                              "&:disabled": { opacity: 0.3 },
+                              padding: "2px",
+                              borderRadius: "sm",
+                              "&:hover": { backgroundColor: "red.50" },
                             })}
                           >
-                            ▼
+                            ✕
                           </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteRule(rule.id)}
-                          className={css({
-                            color: "red.500",
-                            fontSize: "sm",
-                            cursor: "pointer",
-                            padding: "2px",
-                            "&:hover": { backgroundColor: "red.50" },
-                          })}
-                        >
-                          ✕
-                        </button>
                       </li>
                     ))}
                   </ul>
@@ -1019,7 +1226,7 @@ export function AnnotationPageClient({
             </div>
           )}
 
-          {/* === DRAW MODE: MANUAL TOOLS === */}
+          {/* === DRAW MODE: CLASS MANAGER === */}
           {editMode === "draw" && (
             <div
               className={css({
@@ -1032,232 +1239,183 @@ export function AnnotationPageClient({
             >
               <h3
                 className={css({
+                  fontSize: "md",
                   fontWeight: "bold",
                   marginBottom: "4",
                   color: "gray.900",
+                  borderBottom: "1px solid token(colors.gray.200)",
+                  paddingBottom: "2",
                 })}
               >
-                Draw Tools
+                Class Manager (Draw)
               </h3>
 
-              {/* Active Category Palette */}
-              <div className={css({ marginBottom: "4" })}>
-                <div
-                  className={css({
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  })}
-                >
-                  <h4 className={css({ fontSize: "xs", color: "gray.700" })}>
-                    Active Category
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={handleAddCategory}
-                    className={css({
-                      fontSize: "xs",
-                      color: "blue.600",
-                      fontWeight: "bold",
-                      cursor: "pointer",
-                      "&:hover": { textDecoration: "underline" },
-                    })}
-                  >
-                    + New
-                  </button>
-                </div>
-                <div
-                  className={css({
-                    marginTop: "2",
-                    display: "grid",
-                    gap: "2",
-                  })}
-                >
-                  {categories.map((def) => {
-                    const isActive = activeCategory === def.id;
-                    return (
-                      <div
-                        key={def.id}
-                        className={css({
-                          position: "relative",
-                        })}
-                      >
-                        <label
-                          className={css({
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "2",
-                            padding: "2",
-                            borderRadius: "md",
-                            cursor: "pointer",
-                            backgroundColor: isActive
-                              ? "gray.100"
-                              : "transparent",
-                            border: isActive
-                              ? "1px solid token(colors.gray.300)"
-                              : "1px solid transparent",
-                          })}
-                        >
-                          <input
-                            type="radio"
-                            name="drawCategory"
-                            value={def.id}
-                            checked={isActive}
-                            onChange={() => setActiveCategory(def.id)}
-                            className={css({ cursor: "pointer" })}
-                          />
-                          <button
-                            type="button"
-                            className={css({
-                              width: "16px",
-                              height: "16px",
-                              borderRadius: "full",
-                              cursor: "pointer",
-                              border: "1px solid rgba(0,0,0,0.1)",
-                              padding: 0,
-                              appearance: "none",
-                            })}
-                            style={{ backgroundColor: def.color }}
-                            onClick={(e) => {
-                              e.preventDefault(); // Stop radio click
-                              setEditingColorId(
-                                editingColorId === def.id ? null : def.id,
-                              );
-                            }}
-                          />
-                          <span
-                            className={css({
-                              fontSize: "sm",
-                              fontWeight: isActive ? "bold" : "normal",
-                              color: "gray.900",
-                              flex: 1,
-                              marginLeft: "4px",
-                            })}
-                          >
-                            {def.name}
-                          </span>
-
-                          {!def.isSystem && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteCategory(e, def.id)}
-                              className={css({
-                                fontSize: "10px",
-                                color: "gray.400",
-                                cursor: "pointer",
-                                padding: "2px",
-                                marginLeft: "4px",
-                                backgroundColor: "transparent",
-                                border: "none",
-                                "&:hover": { color: "red.500" },
-                              })}
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </label>
-
-                        {/* Color Picker Popover */}
-                        {editingColorId === def.id && (
-                          <div
-                            className={css({
-                              position: "absolute",
-                              top: "100%",
-                              left: 0,
-                              zIndex: 10,
-                              backgroundColor: "white",
-                              border: "1px solid token(colors.gray.300)",
-                              borderRadius: "md",
-                              padding: "4px",
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: "4px",
-                              width: "140px",
-                              boxShadow: "lg",
-                            })}
-                          >
-                            {PRESET_COLORS.map((c) => (
-                              <button
-                                type="button"
-                                key={c}
-                                className={css({
-                                  width: "20px",
-                                  height: "20px",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                  padding: 0,
-                                  border: "none",
-                                  "&:hover": { transform: "scale(1.1)" },
-                                })}
-                                style={{ backgroundColor: c }}
-                                onClick={() =>
-                                  handleUpdateCategoryColor(def.id, c)
-                                }
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Added List */}
-              <h4
+              <div
                 className={css({
-                  fontSize: "xs",
-                  color: "gray.700",
-                  marginBottom: "2",
+                  marginBottom: "4",
+                  fontSize: "sm",
+                  color: "gray.600",
                 })}
               >
-                Added Regions
-              </h4>
-              {addedRegions.length === 0 ? (
-                <div className={css({ color: "gray.500", fontSize: "sm" })}>
-                  No additions.
-                </div>
-              ) : (
-                <ul
+                Click on the image to add polygon points. Double-click or click
+                start point to close.
+              </div>
+
+              {/* Active Class Select */}
+              <div className={css({ marginBottom: "6" })}>
+                <label
                   className={css({
-                    maxHeight: "200px",
-                    overflowY: "auto",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "1",
+                    fontSize: "xs",
+                    fontWeight: "bold",
+                    color: "gray.700",
+                    display: "block",
+                    marginBottom: "2",
                   })}
                 >
-                  {addedRegions.map((region, index) => (
+                  Active Class (for new regions)
+                </label>
+                <select
+                  className={css({
+                    width: "100%",
+                    padding: "2",
+                    borderRadius: "md",
+                    border: "1px solid token(colors.gray.300)",
+                    fontSize: "sm",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    backgroundColor: "white",
+                    color: "gray.900",
+                  })}
+                  style={{
+                    color: categoryMap[activeCategory]?.color,
+                  }}
+                  value={activeCategory}
+                  onChange={(e) => setActiveCategory(Number(e.target.value))}
+                >
+                  {categories.map((def) => (
+                    <option key={def.id} value={def.id}>
+                      {def.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleAddCategory}
+                  className={css({
+                    marginTop: "2",
+                    width: "100%",
+                    padding: "2",
+                    fontSize: "xs",
+                    backgroundColor: "gray.100",
+                    color: "blue.600",
+                    fontWeight: "bold",
+                    borderRadius: "md",
+                    cursor: "pointer",
+                    "&:hover": { backgroundColor: "gray.200" },
+                  })}
+                >
+                  + Add New Class
+                </button>
+              </div>
+
+              {/* Class List & Color Edit */}
+              <div className={css({ borderTop: "1px solid token(colors.gray.200)", paddingTop: "4" })}>
+                <h4 className={css({ fontSize: "sm", fontWeight: "bold", marginBottom: "2", color: "gray.800" })}>
+                  Edit Classes
+                </h4>
+                <ul className={css({ display: "flex", flexDirection: "column", gap: "2" })}>
+                  {categories.map((cat) => (
                     <li
-                      key={region.id}
+                      key={cat.id}
                       className={css({
                         display: "flex",
+                        alignItems: "center",
                         justifyContent: "space-between",
                         padding: "2",
-                        fontSize: "xs",
-                        color: "gray.800",
-                        borderBottom: "1px solid #eee",
+                        borderRadius: "md",
+                        backgroundColor: activeCategory === cat.id ? "blue.50" : "transparent",
+                        border: activeCategory === cat.id ? "1px solid token(colors.blue.200)" : "1px solid transparent",
                       })}
                     >
-                      <span>
-                        #{index + 1} (
-                        {categoryMap[region.categoryId ?? 1]?.name})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAddedRegion(region.id)}
-                        className={css({
-                          color: "red.600",
-                          cursor: "pointer",
-                          fontWeight: "bold",
-                        })}
-                      >
-                        Del
-                      </button>
+                      <div className={css({ display: "flex", alignItems: "center", gap: "2" })}>
+                        {/* Color Box */}
+                        <div
+                          className={css({
+                            width: "16px",
+                            height: "16px",
+                            borderRadius: "sm",
+                            cursor: "pointer",
+                            border: "1px solid rgba(0,0,0,0.1)",
+                          })}
+                          style={{ backgroundColor: cat.color }}
+                          onClick={() => setEditingColorId(editingColorId === cat.id ? null : cat.id)}
+                        />
+                        <span
+                          className={css({
+                            fontSize: "xs",
+                            fontWeight: "medium",
+                            color: "gray.800",
+                            cursor: "pointer",
+                          })}
+                          onClick={() => setActiveCategory(cat.id)}
+                        >
+                          {cat.name}
+                        </span>
+                      </div>
+
+                      {!cat.isSystem && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteCategory(e, cat.id)}
+                          className={css({
+                            fontSize: "xs",
+                            color: "gray.400",
+                            cursor: "pointer",
+                            "&:hover": { color: "red.500" },
+                          })}
+                        >
+                          Trash
+                        </button>
+                      )}
+
+                      {/* Color Picker Popover (Inline) */}
+                      {editingColorId === cat.id && (
+                        <div
+                          className={css({
+                            position: "absolute",
+                            marginTop: "24px",
+                            padding: "2",
+                            backgroundColor: "white",
+                            border: "1px solid token(colors.gray.300)",
+                            borderRadius: "md",
+                            boxShadow: "lg",
+                            zIndex: 10,
+                            display: "grid",
+                            gridTemplateColumns: "repeat(6, 1fr)",
+                            gap: "1",
+                          })}
+                        >
+                          {PRESET_COLORS.map((c) => (
+                            <div
+                              key={c}
+                              className={css({
+                                width: "16px",
+                                height: "16px",
+                                cursor: "pointer",
+                                borderRadius: "sm",
+                                "&:hover": { transform: "scale(1.2)" },
+                              })}
+                              style={{ backgroundColor: c }}
+                              onClick={() => handleUpdateCategoryColor(cat.id, c)}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
-              )}
+              </div>
             </div>
           )}
 

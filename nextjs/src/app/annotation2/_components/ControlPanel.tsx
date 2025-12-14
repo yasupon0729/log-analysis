@@ -352,17 +352,28 @@ function FilterNodeView({
         borderRadius: "lg",
         border: "1px solid token(colors.gray.700)",
         marginBottom: "2",
+        opacity: node.enabled ? 1 : 0.5, // Visual feedback for disabled state
+        transition: "opacity 0.2s",
       })}
     >
       <div
         className={css({
           display: "flex",
-          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "2",
           marginBottom: "2",
         })}
       >
+        <input
+          type="checkbox"
+          checked={node.enabled}
+          onChange={(e) => onUpdate(node.id, { ...node, enabled: e.target.checked })}
+          className={css({ cursor: "pointer" })}
+        />
+
         <select
           value={node.metric}
+          disabled={!node.enabled}
           onChange={(e) => {
             const newMetric = e.target.value;
             const newStat = stats.find((s) => s.key === newMetric);
@@ -382,7 +393,7 @@ function FilterNodeView({
           ))}
         </select>
 
-        <div className={css({ display: "flex", gap: "2" })}>
+        <div className={css({ display: "flex", gap: "2", marginLeft: "auto" })}>
           <button
             type="button"
             onClick={() => onDelete(node.id)}

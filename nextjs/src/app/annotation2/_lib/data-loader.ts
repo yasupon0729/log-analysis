@@ -41,6 +41,7 @@ export async function loadAnnotationData(): Promise<{
   regions: AnnotationRegion[];
   stats: MetricStat[];
   classifications: Record<number, number>;
+  manualClassifications: Record<number, number>;
   filterConfig: FilterConfig | null;
   addedRegions: AnnotationRegion[];
   presets: FilterPreset[];
@@ -99,6 +100,19 @@ export async function loadAnnotationData(): Promise<{
     const classData = JSON.parse(classJsonContent);
     if (classData.classifications) {
       Object.assign(classifications, classData.classifications);
+    }
+  } catch (error) {
+    // ignore
+  }
+
+  // 3b. manual_classifications.json の読み込み
+  const manualClassifications: Record<number, number> = {};
+  try {
+    const manualPath = path.join(INPUT_DIR, "manual_classifications.json");
+    const manualContent = await fs.readFile(manualPath, "utf-8");
+    const manualData = JSON.parse(manualContent);
+    if (manualData.overrides) {
+      Object.assign(manualClassifications, manualData.overrides);
     }
   } catch (error) {
     // ignore
@@ -244,6 +258,7 @@ export async function loadAnnotationData(): Promise<{
     regions,
     stats,
     classifications,
+    manualClassifications,
     filterConfig,
     addedRegions,
     presets,
