@@ -1416,6 +1416,131 @@ export function AnnotationPageClient({
                   ))}
                 </ul>
               </div>
+
+              {/* Added Regions Queue */}
+              <div
+                className={css({
+                  borderTop: "1px solid token(colors.gray.200)",
+                  paddingTop: "4",
+                  marginTop: "4",
+                })}
+              >
+                <div
+                  className={css({
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "2",
+                  })}
+                >
+                  <h4
+                    className={css({
+                      fontSize: "sm",
+                      fontWeight: "bold",
+                      color: "gray.800",
+                    })}
+                  >
+                    Added Regions Queue ({addedRegions.length})
+                  </h4>
+                  {addedRegions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm("Clear all manually added regions?")) {
+                          setAddedRegions([]);
+                        }
+                      }}
+                      className={css({
+                        fontSize: "xs",
+                        color: "red.600",
+                        cursor: "pointer",
+                        fontWeight: "bold",
+                        "&:hover": { textDecoration: "underline" },
+                      })}
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+
+                {addedRegions.length === 0 ? (
+                  <div
+                    className={css({
+                      fontSize: "xs",
+                      color: "gray.500",
+                      fontStyle: "italic",
+                    })}
+                  >
+                    No manual regions added yet.
+                  </div>
+                ) : (
+                  <ul
+                    className={css({
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "2",
+                      maxHeight: "200px",
+                      overflowY: "auto",
+                    })}
+                  >
+                    {addedRegions.map((region, idx) => (
+                      <li
+                        key={region.id}
+                        className={css({
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "2",
+                          backgroundColor: "gray.50",
+                          borderRadius: "md",
+                          border: "1px solid token(colors.gray.200)",
+                        })}
+                      >
+                        <div
+                          className={css({
+                            display: "flex",
+                            flexDirection: "column",
+                          })}
+                        >
+                          <span
+                            className={css({
+                              fontSize: "xs",
+                              fontWeight: "bold",
+                              color: "gray.800",
+                            })}
+                          >
+                            Region #{idx + 1}
+                          </span>
+                          <span
+                            className={css({
+                              fontSize: "xs",
+                              color: "gray.500",
+                            })}
+                          >
+                            {categoryMap[region.categoryId ?? 1]?.name}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAddedRegion(region.id)}
+                          className={css({
+                            color: "red.500",
+                            fontSize: "sm",
+                            cursor: "pointer",
+                            padding: "2px",
+                            "&:hover": {
+                              backgroundColor: "red.50",
+                              borderRadius: "sm",
+                            },
+                          })}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
 
