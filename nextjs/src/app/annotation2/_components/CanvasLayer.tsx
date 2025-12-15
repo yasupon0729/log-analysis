@@ -66,6 +66,23 @@ export function CanvasLayer({
     null,
   );
 
+  // キーボードイベント (Backspaceで点削除)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (editMode === "draw" && e.key === "Backspace") {
+        if (drawingPoints.length > 0) {
+          e.preventDefault();
+          setDrawingPoints((prev) => prev.slice(0, -1));
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [editMode, drawingPoints]);
+
   const DRAG_THRESHOLD = 5;
 
   const finishDrawing = () => {
@@ -522,7 +539,7 @@ export function CanvasLayer({
             pointerEvents: "none",
           })}
         >
-          Click to add points. Right-click to finish.
+          Click to add points. Right-click to finish. Backspace to undo.
         </div>
       )}
     </div>

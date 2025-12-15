@@ -189,11 +189,6 @@ export function AnnotationPageClient({
         next.set(id, activeCategory);
       }
 
-      // Real-time Save for Manual Overrides
-      startTransition(async () => {
-        await saveManualClassifications(Object.fromEntries(next));
-      });
-
       return next;
     });
   };
@@ -205,11 +200,6 @@ export function AnnotationPageClient({
         const target = allRegions.find((r) => r.id === id);
         if (target?.isManualAdded) return;
         next.set(id, activeCategory);
-      });
-
-      // Real-time Save
-      startTransition(async () => {
-        await saveManualClassifications(Object.fromEntries(next));
       });
 
       return next;
@@ -372,6 +362,15 @@ export function AnnotationPageClient({
     setAddedRegions((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const handleUpdateAddedRegionCategory = (
+    id: number,
+    newCategoryId: number,
+  ) => {
+    setAddedRegions((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, categoryId: newCategoryId } : r)),
+    );
+  };
+
   const handleUpdateRoot = (newRoot: FilterGroup) => {
     setFilterConfig((prev) => ({
       ...prev,
@@ -396,7 +395,7 @@ export function AnnotationPageClient({
 
       const pipelineResult = await savePipeline(rules);
 
-      // Manual overrides are already saved in real-time, but let's save again to be sure
+      // Save manual overrides
       const manualResult = await saveManualClassifications(
         Object.fromEntries(manualOverrides),
       );
@@ -441,10 +440,6 @@ export function AnnotationPageClient({
       const next = new Map(prev);
       filteredIds.forEach((id) => {
         next.set(id, targetClassId);
-      });
-
-      startTransition(async () => {
-        await saveManualClassifications(Object.fromEntries(next));
       });
 
       return next;
@@ -1486,20 +1481,28 @@ export function AnnotationPageClient({
                     {addedRegions.map((region, idx) => (
                       <li
                         key={region.id}
+                        onMouseEnter={() => setHoveredId(region.id)}
+                        onMouseLeave={() => setHoveredId(null)}
                         className={css({
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
                           padding: "2",
-                          backgroundColor: "gray.50",
+                          backgroundColor:
+                            hoveredId === region.id ? "blue.50" : "gray.50",
                           borderRadius: "md",
                           border: "1px solid token(colors.gray.200)",
+                          borderColor:
+                            hoveredId === region.id ? "blue.300" : "gray.200",
+                          transition: "all 0.2s",
                         })}
                       >
                         <div
                           className={css({
                             display: "flex",
                             flexDirection: "column",
+                            flex: 1,
+                            marginRight: "2",
                           })}
                         >
                           <span
@@ -1507,18 +1510,40 @@ export function AnnotationPageClient({
                               fontSize: "xs",
                               fontWeight: "bold",
                               color: "gray.800",
+                              marginBottom: "1",
                             })}
                           >
                             Region #{idx + 1}
                           </span>
-                          <span
+                          <select
+                            value={region.categoryId ?? activeCategory}
+                            onChange={(e) =>
+                              handleUpdateAddedRegionCategory(
+                                region.id,
+                                Number(e.target.value),
+                              )
+                            }
+                            onClick={(e) => e.stopPropagation()}
                             className={css({
                               fontSize: "xs",
-                              color: "gray.500",
+                              padding: "1",
+                              borderRadius: "sm",
+                              border: "1px solid token(colors.gray.300)",
+                              backgroundColor: "white",
+                              width: "100%",
+                              cursor: "pointer",
                             })}
+                            style={{
+                              color: categoryMap[region.categoryId ?? 1]?.color,
+                              fontWeight: "bold",
+                            }}
                           >
-                            {categoryMap[region.categoryId ?? 1]?.name}
-                          </span>
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
                         </div>
                         <button
                           type="button"
