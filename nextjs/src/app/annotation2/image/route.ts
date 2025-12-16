@@ -4,6 +4,7 @@ import path from "node:path";
 import { type NextRequest, NextResponse } from "next/server";
 
 import { logger } from "@/lib/logger/server";
+import { resolveDataset } from "../_lib/dataset-service";
 
 function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
   const arrayBuffer = new ArrayBuffer(buffer.byteLength);
@@ -28,30 +29,49 @@ interface CachedImage {
   mtimeMs: number;
 }
 
-let cachedImage: CachedImage | null = null;
-
-async function loadOriginImage(): Promise<CachedImage> {
-  const stat = await fs.stat(originImagePath);
-
-  if (cachedImage && cachedImage.mtimeMs === stat.mtimeMs) {
-    return cachedImage;
-  }
-
-  const buffer = await fs.readFile(originImagePath);
-  const etag = buildEtag(buffer, stat.mtimeMs);
-
-  cachedImage = { buffer, etag, mtimeMs: stat.mtimeMs };
-  return cachedImage;
-}
-
 function buildEtag(buffer: Buffer, mtimeMs: number): string {
   const hash = createHash("sha1").update(buffer).digest("hex");
   return `W/"${hash}-${mtimeMs}"`;
 }
 
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const imageCache = new Map<string, CachedImage>();
+
+async function loadImage(imagePath: string): Promise<CachedImage> {
+  const stat = await fs.stat(imagePath);
+  const cached = imageCache.get(imagePath);
+
+  if (cached && cached.mtimeMs === stat.mtimeMs) {
+    return cached;
+  }
+
+  const buffer = await fs.readFile(imagePath);
+  const etag = buildEtag(buffer, stat.mtimeMs);
+
+  const payload = { buffer, etag, mtimeMs: stat.mtimeMs };
+  imageCache.set(imagePath, payload);
+  return payload;
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const { buffer, etag } = await loadOriginImage();
+    const url = new URL(request.url);
+    const datasetParam = url.searchParams.get("dataset") ?? undefined;
+
+    const resolved = await resolveDataset(datasetParam);
+    const imagePath = (await exists(resolved.imagePath))
+      ? resolved.imagePath
+      : originImagePath;
+
+    const { buffer, etag } = await loadImage(imagePath);
     const ifNoneMatch = request.headers.get("if-none-match");
 
     if (ifNoneMatch && ifNoneMatch === etag) {
@@ -76,11 +96,11 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    imageLogger.error("Failed to serve origin.png", {
+    imageLogger.error("Failed to serve dataset image", {
       error: error instanceof Error ? error.message : String(error),
     });
     return NextResponse.json(
-      { ok: false, message: "origin.png の取得に失敗しました" },
+      { ok: false, message: "画像の取得に失敗しました" },
       { status: 500 },
     );
   }

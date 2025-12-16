@@ -38,8 +38,10 @@ import {
 } from "../actions";
 import { CanvasLayer } from "./CanvasLayer";
 import { ControlPanel } from "./ControlPanel";
+import { useRouter } from "next/navigation";
 
 interface AnnotationPageClientProps {
+  datasetIds: string[];
   initialRegions: AnnotationRegion[];
   stats: MetricStat[];
   imageUrl: string;
@@ -51,9 +53,11 @@ interface AnnotationPageClientProps {
   initialPresets?: FilterPreset[];
   initialCategories?: CategoryDef[];
   initialRules?: ClassificationRule[];
+  datasetId: string;
 }
 
 export function AnnotationPageClient({
+  datasetIds,
   initialRegions,
   stats,
   imageUrl,
@@ -65,7 +69,9 @@ export function AnnotationPageClient({
   initialPresets = [],
   initialCategories = DEFAULT_CATEGORIES,
   initialRules = [],
+  datasetId,
 }: AnnotationPageClientProps) {
+  const router = useRouter();
   const firstNonSystemCategoryId =
     initialCategories.find((c) => !c.isSystem)?.id ??
     initialCategories.find((c) => c.id !== 999)?.id ??
@@ -396,20 +402,21 @@ export function AnnotationPageClient({
     startTransition(async () => {
       // Save merged results as the "final" classification for export
       const classObj = Object.fromEntries(mergedClassifications);
-      const classResult = await saveClassifications(classObj);
+      const classResult = await saveClassifications(datasetId, classObj);
 
       const configToSave: FilterConfig = {
         ...filterConfig,
         excludedIds: Array.from(filteredIds),
       };
-      const filterResult = await saveFilterConfig(configToSave);
+      const filterResult = await saveFilterConfig(datasetId, configToSave);
 
-      const addResult = await saveAddedAnnotations(addedRegions);
+      const addResult = await saveAddedAnnotations(datasetId, addedRegions);
 
-      const pipelineResult = await savePipeline(rules);
+      const pipelineResult = await savePipeline(datasetId, rules);
 
       // Save manual overrides
       const manualResult = await saveManualClassifications(
+        datasetId,
         Object.fromEntries(manualOverrides),
       );
 
@@ -495,7 +502,7 @@ export function AnnotationPageClient({
     const nextCategories = [...categories, newCat];
     setCategories(nextCategories);
     startTransition(async () => {
-      await saveCategories(nextCategories);
+      await saveCategories(datasetId, nextCategories);
     });
   };
 
@@ -514,7 +521,7 @@ export function AnnotationPageClient({
     setEditingColorId(null);
 
     startTransition(async () => {
-      await saveCategories(newCategories);
+      await saveCategories(datasetId, newCategories);
     });
   };
 
@@ -549,7 +556,7 @@ export function AnnotationPageClient({
     if (activeCategory === id) setActiveCategory(999);
 
     startTransition(async () => {
-      await saveCategories(newCategories);
+      await saveCategories(datasetId, newCategories);
     });
   };
 
@@ -569,7 +576,7 @@ export function AnnotationPageClient({
     };
 
     startTransition(async () => {
-      const result = await saveFilterPreset(newPreset);
+      const result = await saveFilterPreset(datasetId, newPreset);
       if (result.success) {
         setPresets(result.presets);
         setSaveMessage({ type: "success", text: "Preset saved." });
@@ -599,7 +606,7 @@ export function AnnotationPageClient({
     if (!confirm("Are you sure you want to delete this preset?")) return;
 
     startTransition(async () => {
-      const result = await deleteFilterPreset(selectedPresetId);
+      const result = await deleteFilterPreset(datasetId, selectedPresetId);
       if (result.success) {
         setPresets(result.presets);
         setSelectedPresetId("");
@@ -623,15 +630,55 @@ export function AnnotationPageClient({
           marginBottom: "6",
         })}
       >
-        <h1
+        <div
           className={css({
-            fontSize: "2xl",
-            fontWeight: "bold",
-            color: "gray.900",
+            display: "flex",
+            alignItems: "center",
+            gap: "4",
           })}
         >
-          Annotation Tool V2 (Classification Pipeline)
-        </h1>
+          <h1
+            className={css({
+              fontSize: "2xl",
+              fontWeight: "bold",
+              color: "gray.900",
+            })}
+          >
+            Annotation Tool V2 (Classification Pipeline)
+          </h1>
+          <div
+            className={css({
+              display: "flex",
+              alignItems: "center",
+              gap: "2",
+              fontSize: "sm",
+            })}
+          >
+            <span className={css({ color: "gray.600" })}>Dataset</span>
+            <select
+              value={datasetId}
+              onChange={(e) => {
+                const next = e.target.value;
+                router.push(`/annotation2?dataset=${encodeURIComponent(next)}`);
+              }}
+              className={css({
+                padding: "2",
+                borderRadius: "md",
+                border: "1px solid token(colors.gray.300)",
+                fontSize: "sm",
+                backgroundColor: "white",
+                color: "gray.900",
+                cursor: "pointer",
+              })}
+            >
+              {datasetIds.map((id) => (
+                <option key={id} value={id}>
+                  {id}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div

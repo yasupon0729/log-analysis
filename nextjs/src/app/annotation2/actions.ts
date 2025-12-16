@@ -9,8 +9,16 @@ import type {
   FilterConfig,
   FilterPreset,
 } from "./_types";
+import { resolveDataset } from "./_lib/dataset-service";
 
-const INPUT_DIR = path.join(process.cwd(), "src/app/annotation2/input");
+async function getWorkFilePath(
+  datasetId: string,
+  fileName: string,
+): Promise<string> {
+  const { workDir } = await resolveDataset(datasetId);
+  await fs.mkdir(workDir, { recursive: true });
+  return path.join(workDir, fileName);
+}
 
 export interface SaveRemoveResult {
   success: boolean;
@@ -18,10 +26,11 @@ export interface SaveRemoveResult {
 }
 
 export async function saveRemovedAnnotations(
+  datasetId: string,
   removedIds: number[],
 ): Promise<SaveRemoveResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "remove.json");
+    const filePath = await getWorkFilePath(datasetId, "remove.json");
 
     // 保存するデータの形式
     const data = {
@@ -51,10 +60,11 @@ export interface SaveClassificationsResult {
 }
 
 export async function saveClassifications(
+  datasetId: string,
   classifications: Record<number, number>,
 ): Promise<SaveClassificationsResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "classification.json");
+    const filePath = await getWorkFilePath(datasetId, "classification.json");
 
     const data = {
       version: 1,
@@ -83,10 +93,11 @@ export interface SaveCategoriesResult {
 }
 
 export async function saveCategories(
+  datasetId: string,
   categories: CategoryDef[],
 ): Promise<SaveCategoriesResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "categories.json");
+    const filePath = await getWorkFilePath(datasetId, "categories.json");
 
     const data = {
       version: 1,
@@ -115,10 +126,11 @@ export interface SaveFilterResult {
 }
 
 export async function saveFilterConfig(
+  datasetId: string,
   config: FilterConfig,
 ): Promise<SaveFilterResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "filtered.json");
+    const filePath = await getWorkFilePath(datasetId, "filtered.json");
 
     // _types/index.ts で定義された FilterConfig の構造をそのまま保存します。
     // { version, rules, excludedIds }
@@ -143,10 +155,11 @@ export interface SaveAdditionsResult {
 }
 
 export async function saveAddedAnnotations(
+  datasetId: string,
   regions: any[], // AnnotationRegion[]
 ): Promise<SaveAdditionsResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "additions.json");
+    const filePath = await getWorkFilePath(datasetId, "additions.json");
 
     // AnnotationRegion -> 保存用フォーマット (COCO準拠 + hole) 変換
     const formattedRegions = regions.map((region: any) => {
@@ -162,7 +175,7 @@ export async function saveAddedAnnotations(
       return {
         id: region.id,
         image_id: 1, // Dummy
-        category_id: 1, // Dummy
+        category_id: region.categoryId ?? 1,
         bbox: region.bbox,
         segmentation: [flatPoints], // [[x,y...]]
         hole: [], // 将来用
@@ -200,10 +213,11 @@ export interface SavePresetResult {
 }
 
 export async function saveFilterPreset(
+  datasetId: string,
   preset: FilterPreset,
 ): Promise<SavePresetResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "presets.json");
+    const filePath = await getWorkFilePath(datasetId, "presets.json");
     let presets: FilterPreset[] = [];
     try {
       const content = await fs.readFile(filePath, "utf-8");
@@ -240,10 +254,11 @@ export async function saveFilterPreset(
 }
 
 export async function deleteFilterPreset(
+  datasetId: string,
   id: string,
 ): Promise<SavePresetResult> {
   try {
-    const filePath = path.join(INPUT_DIR, "presets.json");
+    const filePath = await getWorkFilePath(datasetId, "presets.json");
     let presets: FilterPreset[] = [];
     try {
       const content = await fs.readFile(filePath, "utf-8");
@@ -290,13 +305,15 @@ export interface SavePipelineResult {
 
 export async function savePipeline(
 
+  datasetId: string,
+
   rules: ClassificationRule[],
 
 ): Promise<SavePipelineResult> {
 
   try {
 
-    const filePath = path.join(INPUT_DIR, "rules.json");
+    const filePath = await getWorkFilePath(datasetId, "rules.json");
 
     const data = {
 
@@ -348,13 +365,15 @@ export interface SaveManualResult {
 
 export async function saveManualClassifications(
 
+  datasetId: string,
+
   manualClassifications: Record<number, number>,
 
 ): Promise<SaveManualResult> {
 
   try {
 
-    const filePath = path.join(INPUT_DIR, "manual_classifications.json");
+    const filePath = await getWorkFilePath(datasetId, "manual_classifications.json");
 
 
 
@@ -400,11 +419,13 @@ export async function saveManualClassifications(
 
 
 
-export async function loadManualClassifications(): Promise<Record<number, number>> {
+export async function loadManualClassifications(
+  datasetId: string,
+): Promise<Record<number, number>> {
 
   try {
 
-    const filePath = path.join(INPUT_DIR, "manual_classifications.json");
+    const filePath = await getWorkFilePath(datasetId, "manual_classifications.json");
 
     const content = await fs.readFile(filePath, "utf-8");
 
