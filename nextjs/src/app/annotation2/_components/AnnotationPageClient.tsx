@@ -66,6 +66,15 @@ export function AnnotationPageClient({
   initialCategories = DEFAULT_CATEGORIES,
   initialRules = [],
 }: AnnotationPageClientProps) {
+  const firstNonSystemCategoryId =
+    initialCategories.find((c) => !c.isSystem)?.id ??
+    initialCategories.find((c) => c.id !== 999)?.id ??
+    1;
+  const initialActiveCategory =
+    initialCategories.some((c) => c.id === 999) && firstNonSystemCategoryId !== undefined
+      ? 999
+      : firstNonSystemCategoryId ?? 1;
+
   // Categories State
   const [categories, setCategories] =
     useState<CategoryDef[]>(initialCategories);
@@ -113,8 +122,12 @@ export function AnnotationPageClient({
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
-  const [fromClassId, setFromClassId] = useState<number | "any">(1);
-  const [activeCategory, setActiveCategory] = useState<number>(999); // Default: Remove
+  const [fromClassId, setFromClassId] = useState<number | "any">(
+    firstNonSystemCategoryId ?? 1,
+  );
+  const [activeCategory, setActiveCategory] = useState<number>(
+    initialActiveCategory,
+  );
   const [editingColorId, setEditingColorId] = useState<number | null>(null);
 
   const [hoveredId, setHoveredId] = useState<number | null>(null);

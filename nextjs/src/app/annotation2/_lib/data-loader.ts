@@ -52,6 +52,9 @@ export async function loadAnnotationData(): Promise<{
   const jsonPath = path.join(INPUT_DIR, "segmentation.json");
   const jsonContent = await fs.readFile(jsonPath, "utf-8");
   const cocoData: CocoData = JSON.parse(jsonContent);
+  const derivedCategoryIds = Array.from(
+    new Set(cocoData.annotations.map((ann) => ann.category_id)),
+  ).sort((a, b) => a - b);
 
   // 2. result.csv (Metrics) の読み込み
   const csvPath = path.join(INPUT_DIR, "result.csv");
@@ -186,6 +189,30 @@ export async function loadAnnotationData(): Promise<{
     // ignore
   }
 
+  // categories.json が無い場合は segmentation.json の category_id から初期クラスを自動生成
+  if (categories === DEFAULT_CATEGORIES && derivedCategoryIds.length > 0) {
+    const derived = derivedCategoryIds.map((id, idx) => {
+      const hue = (idx * 57) % 360;
+      const color = `hsl(${hue}, 70%, 50%)`;
+      return {
+        id,
+        name: `Class ${id}`,
+        color,
+        fill: `hsla(${hue}, 70%, 50%, 0.25)`,
+      } satisfies CategoryDef;
+    });
+    const removeCat =
+      DEFAULT_CATEGORIES.find((c) => c.id === 999) ??
+      ({
+        id: 999,
+        name: "Remove (Trash)",
+        color: "#dc2626",
+        fill: "rgba(239, 68, 68, 0.35)",
+        isSystem: true,
+      } satisfies CategoryDef);
+    categories = [...derived, removeCat];
+  }
+
   // 8. rules.json の読み込み (ルール)
   let rules: ClassificationRule[] = [];
   try {
@@ -233,6 +260,7 @@ export async function loadAnnotationData(): Promise<{
       bbox: ann.bbox,
       points,
       metrics: safeMetrics,
+      categoryId: ann.category_id,
     });
 
     if (metrics) {
