@@ -1,0 +1,13 @@
+{
+  "version": 3,
+  "root": {
+    "id": "root",
+    "type": "group",
+    "action": "keep",
+    "logic": "AND",
+    "children": [],
+    "enabled": true
+  },
+  "maxDepth": 2,
+  "excludedIds": []
+}
