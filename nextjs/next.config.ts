@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
     "on-exit-leak-free",
     "pino-std-serializers",
     "quick-format-unescaped",
+    "ssh2", // SSH関連のバンドルエラー回避のため追加
+    "cpu-features", // ssh2の依存関係
   ],
 
   // Webpack 設定でクライアントサイドのバンドルを制御
