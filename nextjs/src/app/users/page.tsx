@@ -5,6 +5,8 @@ import { getUsersOverview } from "@/lib/users/dashboard-service";
 
 import UsersPageClient from "./page-client";
 
+export const dynamic = "force-dynamic";
+
 export default async function UsersPage() {
   logger.info("Users dashboard page loaded", {
     page: "/users",

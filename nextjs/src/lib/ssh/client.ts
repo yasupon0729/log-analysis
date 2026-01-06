@@ -2,7 +2,6 @@ import "server-only";
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Client } from "ssh2";
 import { logger } from "@/lib/logger/server";
 
 const log = logger.child({ component: "SshClient" });
@@ -15,6 +14,13 @@ interface SshConfig {
   port: number;
   username: string;
   privateKey: string;
+}
+
+type SshClient = import("ssh2").Client;
+
+async function createSshClient(): Promise<SshClient> {
+  const { Client } = await import("ssh2");
+  return new Client();
 }
 
 async function getSshConfigAsync(target: SshTarget): Promise<SshConfig> {
@@ -64,7 +70,7 @@ export async function getRemoteFileList(
   }
 
   const config = await getSshConfigAsync(target);
-  const conn = new Client();
+  const conn = await createSshClient();
 
   return new Promise((resolve, reject) => {
     conn
@@ -120,7 +126,7 @@ export async function uploadFileToRemote(
   const remotePath = `${targetDir.replace(/\/$/, "")}/${safeFileName}`;
 
   const config = await getSshConfigAsync(target);
-  const conn = new Client();
+  const conn = await createSshClient();
 
   return new Promise((resolve, reject) => {
     conn
@@ -176,7 +182,7 @@ export async function deleteRemoteFile(
   const remotePath = `${targetDir.replace(/\/$/, "")}/${safeFileName}`;
 
   const config = await getSshConfigAsync(target);
-  const conn = new Client();
+  const conn = await createSshClient();
 
   return new Promise((resolve, reject) => {
     conn
