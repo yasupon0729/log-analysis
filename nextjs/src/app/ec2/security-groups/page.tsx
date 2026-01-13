@@ -74,6 +74,48 @@ function getSortIndicator(direction: false | "asc" | "desc") {
   return "⇅";
 }
 
+function collectRuleSearchValues(
+  rules: SecurityGroupWithWarnings["inboundRules"],
+): string[] {
+  const values: string[] = [];
+
+  for (const rule of rules) {
+    values.push(rule.protocol);
+    if (rule.fromPort !== undefined) {
+      values.push(String(rule.fromPort));
+    }
+    if (rule.toPort !== undefined) {
+      values.push(String(rule.toPort));
+    }
+    if (rule.description) {
+      values.push(rule.description);
+    }
+
+    for (const range of rule.ipRanges ?? []) {
+      values.push(range.cidr);
+      if (range.description) {
+        values.push(range.description);
+      }
+    }
+
+    for (const range of rule.ipv6Ranges ?? []) {
+      values.push(range.cidr);
+      if (range.description) {
+        values.push(range.description);
+      }
+    }
+
+    for (const peer of rule.securityGroups ?? []) {
+      values.push(peer.groupId);
+      if (peer.description) {
+        values.push(peer.description);
+      }
+    }
+  }
+
+  return values;
+}
+
 export default function SecurityGroupsPage() {
   const searchInputId = useId();
   const vpcSelectId = useId();
@@ -152,19 +194,32 @@ export default function SecurityGroupsPage() {
       return [] as SecurityGroupWithWarnings[];
     }
 
-    const lowerSearch = searchTerm.toLowerCase();
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const tokens = normalizedSearch.split(/\s+/).filter(Boolean);
+
     return data.securityGroups.filter((group) => {
       const vpcMatches =
         selectedVpc === "all" || (group.vpcId || "EC2-Classic") === selectedVpc;
-      const tagName = group.tags?.Name?.toLowerCase() ?? "";
-      const searchMatches =
-        group.groupName.toLowerCase().includes(lowerSearch) ||
-        group.groupId.toLowerCase().includes(lowerSearch) ||
-        group.description.toLowerCase().includes(lowerSearch) ||
-        tagName.includes(lowerSearch);
       const warningsMatch = !showOnlyWarnings || group.warnings.length > 0;
 
-      return vpcMatches && searchMatches && warningsMatch;
+      if (tokens.length === 0) {
+        return vpcMatches && warningsMatch;
+      }
+
+      const candidates = [
+        group.groupName,
+        group.groupId,
+        group.description,
+        group.tags?.Name ?? "",
+        ...collectRuleSearchValues(group.inboundRules),
+        ...collectRuleSearchValues(group.outboundRules),
+      ].map((value) => value.toLowerCase());
+
+      const searchMatches = tokens.every((token) =>
+        candidates.some((value) => value.includes(token)),
+      );
+
+      return vpcMatches && warningsMatch && searchMatches;
     });
   }, [data, searchTerm, selectedVpc, showOnlyWarnings]);
 
@@ -324,7 +379,7 @@ export default function SecurityGroupsPage() {
           <input
             id={searchInputId}
             type="text"
-            placeholder="Search by name, ID, or description..."
+            placeholder="Search by name, ID, description, or IP..."
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             className={securityGroupsInputRecipe()}
