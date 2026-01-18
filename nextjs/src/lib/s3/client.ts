@@ -34,6 +34,50 @@ import type {
 const DEFAULT_REGION = process.env.AWS_REGION || "ap-northeast-1";
 const DEFAULT_BUCKET = process.env.S3_LOG_BUCKET || "logs";
 
+type AwsErrorMetadata = {
+  requestId?: string;
+  extendedRequestId?: string;
+  cfId?: string;
+  httpStatusCode?: number;
+  attempts?: number;
+  totalRetryDelay?: number;
+};
+
+type AwsErrorLike = {
+  name?: string;
+  message?: string;
+  code?: string;
+  Code?: string;
+  $fault?: string;
+  $metadata?: AwsErrorMetadata;
+  $retryable?: {
+    throttling?: boolean;
+  };
+};
+
+function buildAwsErrorMetadata(error: unknown): {
+  name?: string;
+  message?: string;
+  code?: string;
+  fault?: string;
+  retryable?: { throttling?: boolean };
+  metadata?: AwsErrorMetadata;
+} {
+  if (!error || typeof error !== "object") {
+    return {};
+  }
+
+  const err = error as AwsErrorLike;
+  return {
+    name: err.name,
+    message: err.message,
+    code: err.code ?? err.Code,
+    fault: err.$fault,
+    retryable: err.$retryable,
+    metadata: err.$metadata,
+  };
+}
+
 export class S3Client {
   private readonly s3: AwsS3Client;
   private readonly logger = logger.child({ component: "S3Client" });
@@ -64,152 +108,227 @@ export class S3Client {
     options: S3ListObjectsOptions = {},
   ): Promise<S3ListObjectsResult> {
     const prefix = this.resolvePrefix(options.prefix);
+    try {
+      const response = await this.s3.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: options.continuationToken,
+          MaxKeys: options.maxKeys,
+          Delimiter: options.delimiter,
+        }),
+      );
 
-    const response = await this.s3.send(
-      new ListObjectsV2Command({
-        Bucket: this.bucket,
-        Prefix: prefix,
-        ContinuationToken: options.continuationToken,
-        MaxKeys: options.maxKeys,
-        Delimiter: options.delimiter,
-      }),
-    );
+      const objects: S3ObjectSummary[] = (response.Contents || [])
+        .filter(
+          (object): object is S3Object & { Key: string } =>
+            typeof object.Key === "string" && object.Key.length > 0,
+        )
+        .map((object) => this.toSummary(object));
 
-    const objects: S3ObjectSummary[] = (response.Contents || [])
-      .filter(
-        (object): object is S3Object & { Key: string } =>
-          typeof object.Key === "string" && object.Key.length > 0,
+      const commonPrefixes: S3CommonPrefixSummary[] = (
+        response.CommonPrefixes || []
       )
-      .map((object) => this.toSummary(object));
+        .filter(
+          (entry): entry is { Prefix: string } =>
+            typeof entry.Prefix === "string" && entry.Prefix.length > 0,
+        )
+        .map((entry) => ({
+          prefix: this.stripPrefix(entry.Prefix),
+          fullPrefix: entry.Prefix,
+        }));
 
-    const commonPrefixes: S3CommonPrefixSummary[] = (
-      response.CommonPrefixes || []
-    )
-      .filter(
-        (entry): entry is { Prefix: string } =>
-          typeof entry.Prefix === "string" && entry.Prefix.length > 0,
-      )
-      .map((entry) => ({
-        prefix: this.stripPrefix(entry.Prefix),
-        fullPrefix: entry.Prefix,
-      }));
+      this.logger.debug("S3 listObjects", {
+        requestPrefix: prefix,
+        count: objects.length,
+        truncated: Boolean(response.IsTruncated),
+        commonPrefixes: commonPrefixes.length,
+      });
 
-    this.logger.debug("S3 listObjects", {
-      requestPrefix: prefix,
-      count: objects.length,
-      truncated: Boolean(response.IsTruncated),
-      commonPrefixes: commonPrefixes.length,
-    });
-
-    return {
-      objects,
-      commonPrefixes,
-      nextContinuationToken: response.NextContinuationToken,
-      isTruncated: Boolean(response.IsTruncated),
-    };
+      return {
+        objects,
+        commonPrefixes,
+        nextContinuationToken: response.NextContinuationToken,
+        isTruncated: Boolean(response.IsTruncated),
+      };
+    } catch (error) {
+      this.logAwsError(
+        "S3 listObjects failed",
+        {
+          bucket: this.bucket,
+          requestPrefix: prefix,
+          continuationToken: options.continuationToken,
+          maxKeys: options.maxKeys,
+          delimiter: options.delimiter,
+        },
+        error,
+      );
+      throw error;
+    }
   }
 
   async getObject(options: S3GetObjectOptions): Promise<S3GetObjectResult> {
     const key = this.resolveKey(options.key);
+    try {
+      const response = await this.s3.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Range: options.range,
+        }),
+      );
 
-    const response = await this.s3.send(
-      new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Range: options.range,
-      }),
-    );
+      const body = await this.toBuffer(response);
 
-    const body = await this.toBuffer(response);
+      this.logger.debug("S3 getObject succeeded", {
+        key,
+        size: body.byteLength,
+      });
 
-    this.logger.debug("S3 getObject succeeded", {
-      key,
-      size: body.byteLength,
-    });
-
-    return {
-      key: options.key,
-      body,
-      contentType: response.ContentType || undefined,
-      metadata: response.Metadata || undefined,
-      etag: this.normalizeEtag(response.ETag),
-      lastModified: response.LastModified?.toISOString(),
-      contentLength: response.ContentLength ?? body.byteLength,
-    };
+      return {
+        key: options.key,
+        body,
+        contentType: response.ContentType || undefined,
+        metadata: response.Metadata || undefined,
+        etag: this.normalizeEtag(response.ETag),
+        lastModified: response.LastModified?.toISOString(),
+        contentLength: response.ContentLength ?? body.byteLength,
+      };
+    } catch (error) {
+      this.logAwsError(
+        "S3 getObject failed",
+        {
+          bucket: this.bucket,
+          key,
+          requestedKey: options.key,
+          range: options.range,
+        },
+        error,
+      );
+      throw error;
+    }
   }
 
   async getObjectStream(
     options: S3GetObjectOptions,
   ): Promise<GetObjectCommandOutput["Body"]> {
     const key = this.resolveKey(options.key);
-    const response = await this.s3.send(
-      new GetObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Range: options.range,
-      }),
-    );
+    try {
+      const response = await this.s3.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Range: options.range,
+        }),
+      );
 
-    this.logger.debug("S3 getObjectStream prepared", { key });
-    return response.Body;
+      this.logger.debug("S3 getObjectStream prepared", { key });
+      return response.Body;
+    } catch (error) {
+      this.logAwsError(
+        "S3 getObjectStream failed",
+        {
+          bucket: this.bucket,
+          key,
+          requestedKey: options.key,
+          range: options.range,
+        },
+        error,
+      );
+      throw error;
+    }
   }
 
   async putObject(options: S3PutObjectOptions): Promise<{ etag?: string }> {
     const key = this.resolveKey(options.key);
+    try {
+      const response = await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: options.body,
+          ContentType: options.contentType,
+          Metadata: options.metadata,
+          CacheControl: options.cacheControl,
+          ACL: options.acl,
+          ContentEncoding: options.contentEncoding,
+        }),
+      );
 
-    const response = await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: options.body,
-        ContentType: options.contentType,
-        Metadata: options.metadata,
-        CacheControl: options.cacheControl,
-        ACL: options.acl,
-        ContentEncoding: options.contentEncoding,
-      }),
-    );
+      this.logger.info("S3 putObject uploaded", {
+        key,
+        hasMetadata: Boolean(options.metadata),
+      });
 
-    this.logger.info("S3 putObject uploaded", {
-      key,
-      hasMetadata: Boolean(options.metadata),
-    });
-
-    return { etag: this.normalizeEtag(response.ETag) };
+      return { etag: this.normalizeEtag(response.ETag) };
+    } catch (error) {
+      this.logAwsError(
+        "S3 putObject failed",
+        {
+          bucket: this.bucket,
+          key,
+          requestedKey: options.key,
+          hasMetadata: Boolean(options.metadata),
+          contentType: options.contentType,
+        },
+        error,
+      );
+      throw error;
+    }
   }
 
   async deleteObject(key: string): Promise<void> {
     const resolved = this.resolveKey(key);
-    await this.s3.send(
-      new DeleteObjectCommand({
-        Bucket: this.bucket,
-        Key: resolved,
-      }),
-    );
+    try {
+      await this.s3.send(
+        new DeleteObjectCommand({
+          Bucket: this.bucket,
+          Key: resolved,
+        }),
+      );
 
-    this.logger.info("S3 deleteObject completed", { key: resolved });
+      this.logger.info("S3 deleteObject completed", { key: resolved });
+    } catch (error) {
+      this.logAwsError(
+        "S3 deleteObject failed",
+        { bucket: this.bucket, key: resolved, requestedKey: key },
+        error,
+      );
+      throw error;
+    }
   }
 
   async deleteObjects(keys: string[]): Promise<S3DeleteObjectsResult> {
     if (!keys.length) {
       return { deleted: [], errors: [] };
     }
+    try {
+      const response = await this.s3.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: {
+            Objects: keys.map((key) => ({ Key: this.resolveKey(key) })),
+          },
+        }),
+      );
 
-    const response = await this.s3.send(
-      new DeleteObjectsCommand({
-        Bucket: this.bucket,
-        Delete: {
-          Objects: keys.map((key) => ({ Key: this.resolveKey(key) })),
+      const result = this.normalizeDeleteResult(keys, response);
+      this.logger.warn("S3 deleteObjects completed", {
+        deleted: result.deleted,
+        errorCount: result.errors.length,
+      });
+      return result;
+    } catch (error) {
+      this.logAwsError(
+        "S3 deleteObjects failed",
+        {
+          bucket: this.bucket,
+          keyCount: keys.length,
         },
-      }),
-    );
-
-    const result = this.normalizeDeleteResult(keys, response);
-    this.logger.warn("S3 deleteObjects completed", {
-      deleted: result.deleted,
-      errorCount: result.errors.length,
-    });
-    return result;
+        error,
+      );
+      throw error;
+    }
   }
 
   async headObject(key: string): Promise<S3HeadObjectResult> {
@@ -239,7 +358,11 @@ export class S3Client {
         return { key, exists: false };
       }
 
-      this.logger.error("S3 headObject failed", { key: resolved, error });
+      this.logAwsError(
+        "S3 headObject failed",
+        { bucket: this.bucket, key: resolved, requestedKey: key },
+        error,
+      );
       throw error;
     }
   }
@@ -259,7 +382,11 @@ export class S3Client {
         },
       };
     } catch (error) {
-      this.logger.error("S3 health check failed", { error });
+      this.logAwsError(
+        "S3 health check failed",
+        { bucket: this.bucket, region: this.region },
+        error,
+      );
       return {
         status: "unhealthy",
         details: {
@@ -304,6 +431,18 @@ export class S3Client {
     }
     const trimmed = prefix.replace(/^\/+|\/+$/g, "");
     return trimmed || undefined;
+  }
+
+  private logAwsError(
+    message: string,
+    context: Record<string, unknown>,
+    error: unknown,
+  ): void {
+    this.logger.error(message, {
+      ...context,
+      error,
+      errorMetadata: buildAwsErrorMetadata(error),
+    });
   }
 
   private toSummary(object: S3Object & { Key: string }): S3ObjectSummary {
