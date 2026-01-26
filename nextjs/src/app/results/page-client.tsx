@@ -2032,6 +2032,13 @@ export default function ResultsPageClient({
                 }`}
               </p>
             ) : null}
+            {selectedAnalysisRow ? (
+              <p className={modalSubtitleClass}>
+                {`AIモデル名 ${selectedAnalysisRow.aiModelName ?? "-"} / AIモデルコード ${
+                  selectedAnalysisRow.aiModelCode ?? "-"
+                }`}
+              </p>
+            ) : null}
             {isPreviewLoading ? (
               <div className={modalInfoMessageClass}>
                 プレビューを読み込み中です…
