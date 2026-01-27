@@ -15,12 +15,28 @@
 
 COMPOSE_FILE=nextjs/docker-compose.yml
 DOCKER_COMPOSE=docker compose -f $(COMPOSE_FILE)
+ELECTRON_ENV_FILE ?= .env.electron
+ELECTRON_ENV_PATH := $(abspath $(ELECTRON_ENV_FILE))
 
 .PHONY: up down build build-up build-no-cache build-no-cache-up up-with-tunnel rebuild-up output-log
 
 # コンテナをバックグラウンドで起動
 up:
 	$(DOCKER_COMPOSE) up -d
+	@if [ -f "$(ELECTRON_ENV_PATH)" ]; then \
+		. "$(ELECTRON_ENV_PATH)"; \
+		case "$${ELECTRON_MODE:-}" in \
+			1|true|TRUE|yes|YES) \
+				echo "[info] Electron を起動します"; \
+				ELECTRON_SKIP_DOCKER_START=1 bun run electron:start; \
+				;; \
+			*) \
+				echo "[info] Electron モードは無効です"; \
+				;; \
+		esac; \
+	else \
+		echo "[info] $(ELECTRON_ENV_FILE) がないため Electron を起動しません"; \
+	fi
 
 # gexel.tunnel のトンネルサービスを活性化してから起動
 up-with-tunnel:
@@ -39,7 +55,7 @@ up-with-tunnel:
 			./scripts/setup-gexel-tunnel.sh; \
 		fi; \
 	fi
-	$(DOCKER_COMPOSE) up -d
+	$(MAKE) up
 
 # コンテナを停止して削除
 down:

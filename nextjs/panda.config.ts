@@ -103,11 +103,11 @@ export default defineConfig({
         fonts: {
           body: {
             value:
-              "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+              "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Apple Color Emoji', sans-serif",
           },
           mono: {
             value:
-              "'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+              "'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Apple Color Emoji', monospace",
           },
         },
 

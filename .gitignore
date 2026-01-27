@@ -44,3 +44,6 @@ logs/server/app-prod.log
 nextjs/nextjs/logs/container/server/app-prod.log
 nextjs/nextjs/logs/container/client/app-prod.log
 logs/**/*
+.env.electron
+electron/node_modules/electron
+electron/node_modules/.bin/electron

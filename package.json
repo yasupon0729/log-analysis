@@ -2,14 +2,17 @@
   "name": "log-analysis-workspace",
   "private": true,
   "workspaces": [
-    "nextjs"
+    "nextjs",
+    "electron"
   ],
   "scripts": {
     "dev": "cd nextjs && bun dev --turbopack --port 3729",
     "build": "cd nextjs && bun build",
     "format": "bunx @biomejs/biome format --write .",
     "lint": "bunx @biomejs/biome check .",
-    "lint:fix": "bunx @biomejs/biome check --write ."
+    "lint:fix": "bunx @biomejs/biome check --write .",
+    "electron:dev": "cd electron && bun run dev",
+    "electron:start": "cd electron && bun run start"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.5"
